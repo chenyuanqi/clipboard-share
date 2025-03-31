@@ -6,7 +6,7 @@ export default function AboutPage() {
       <header className="w-full p-4 sm:p-6 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <Link href="/" className="text-2xl font-bold text-gray-800 dark:text-white">
-            剪贴板共享
+            云剪
           </Link>
           <nav className="hidden sm:flex space-x-4">
             <Link href="/" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition">
@@ -22,12 +22,12 @@ export default function AboutPage() {
       <main className="flex-1 py-10 px-4 sm:px-6">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">
-            关于剪贴板共享
+            关于云剪
           </h1>
           
           <div className="prose dark:prose-invert max-w-none">
             <p className="text-lg text-gray-700 dark:text-gray-300 mb-6">
-              剪贴板共享是一个简单、安全的文本共享工具，让您可以轻松地在不同设备之间分享文本内容，无需注册账户，保护您的隐私。
+              云剪是一个简单、安全的文本共享工具，让您可以轻松地在不同设备之间分享文本内容，无需注册账户，保护您的隐私。
             </p>
             
             <h2 className="text-xl font-semibold text-gray-800 dark:text-white mt-8 mb-4">
@@ -71,6 +71,12 @@ export default function AboutPage() {
                   <strong>响应式设计</strong> - 在任何设备上都能获得良好的使用体验，包括手机、平板和桌面电脑。
                 </span>
               </li>
+              <li className="flex items-start">
+                <span className="inline-flex items-center justify-center bg-blue-100 dark:bg-blue-900 rounded-full w-6 h-6 text-blue-600 dark:text-blue-400 font-medium text-sm mr-3 mt-0.5">7</span>
+                <span>
+                  <strong>跨设备同步</strong> - 您的剪贴板内容可以在多个设备间自动同步，确保您随时随地都能访问最新内容。
+                </span>
+              </li>
             </ul>
             
             <h2 className="text-xl font-semibold text-gray-800 dark:text-white mt-8 mb-4">
@@ -90,6 +96,9 @@ export default function AboutPage() {
               <li>
                 <strong>编辑内容</strong>：在查看页面点击"编辑"按钮即可修改内容，修改后会自动保存。
               </li>
+              <li>
+                <strong>跨设备使用</strong>：在不同设备上访问同一个剪贴板链接，内容会自动同步。
+              </li>
             </ol>
             
             <h2 className="text-xl font-semibold text-gray-800 dark:text-white mt-8 mb-4">
@@ -101,17 +110,17 @@ export default function AboutPage() {
             </p>
             
             <ul className="list-disc pl-6 space-y-2 text-gray-700 dark:text-gray-300 mt-3">
-              <li>所有数据均存储在您的浏览器本地，不会上传到服务器。</li>
+              <li>您的数据会安全地存储在本地和云端，确保多设备间的同步。</li>
               <li>密码保护的剪贴板使用AES-GCM加密算法进行端到端加密。</li>
               <li>所有剪贴板均为临时性质，过期后自动删除。</li>
-              <li>该应用不收集任何用户数据或使用任何跟踪技术。</li>
+              <li>该应用不收集任何个人身份信息或使用任何跟踪技术。</li>
             </ul>
           </div>
           
           <div className="mt-10 pt-8 border-t border-gray-200 dark:border-gray-800">
             <Link 
               href="/" 
-              className="px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg inline-block transition"
+              className="px-5 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:transform active:scale-95 text-white font-medium rounded-lg inline-block transition-all duration-150"
             >
               创建剪贴板
             </Link>
@@ -120,7 +129,7 @@ export default function AboutPage() {
       </main>
       
       <footer className="p-4 sm:p-6 border-t border-gray-200 dark:border-gray-800 text-center text-gray-600 dark:text-gray-400">
-        <p>© {new Date().getFullYear()} 剪贴板共享 - 安全地分享您的内容</p>
+        <p>© {new Date().getFullYear()} 云剪 - 安全地分享您的内容</p>
       </footer>
     </div>
   );

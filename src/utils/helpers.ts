@@ -115,7 +115,16 @@ export async function decryptText(encryptedText: string, password: string): Prom
  * @returns 过期的时间戳（毫秒）
  */
 export function calculateExpirationTime(hours: number): number {
-  return Date.now() + hours * 60 * 60 * 1000;
+  // 使用精确的计算方法确保不会有舍入误差
+  const now = Date.now();
+  const millisecondsToExpire = Math.floor(hours * 3600 * 1000); // 每小时3600秒，每秒1000毫秒
+  const expiresAt = now + millisecondsToExpire;
+  
+  console.log(`[calculateExpirationTime] 当前时间: ${new Date(now).toString()}`);
+  console.log(`[calculateExpirationTime] 过期时间: ${new Date(expiresAt).toString()}`);
+  console.log(`[calculateExpirationTime] 设置过期时间: ${hours}小时，共${millisecondsToExpire}毫秒`);
+  
+  return expiresAt;
 }
 
 /**
