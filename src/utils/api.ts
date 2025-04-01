@@ -256,6 +256,12 @@ export async function saveClipboardToServer(
 ): Promise<boolean> {
   try {
     console.log(`正在将剪贴板内容保存到服务器 (ID=${id})...`);
+    console.log(`保存前参数检查: isProtected=${isProtected} (${typeof isProtected})`);
+    
+    // 将布尔值转换为数字表示
+    const protectedValue = isProtected ? 1 : 0;
+    
+    console.log(`发送到服务器的参数: id=${id}, content长度=${content.length}, isProtected=${protectedValue}, expirationHours=${expirationHours}`);
     
     const response = await fetch('/api/clipboard', {
       method: 'POST',
@@ -267,7 +273,7 @@ export async function saveClipboardToServer(
       body: JSON.stringify({ 
         id, 
         content, 
-        isProtected, 
+        isProtected: protectedValue, 
         expirationHours 
       }),
       cache: 'no-store',
@@ -284,6 +290,17 @@ export async function saveClipboardToServer(
     invalidateCache(id);
     
     console.log(`剪贴板内容已成功保存到服务器 (ID=${id})`);
+    
+    // 打印服务器返回的数据
+    if (data.clipboard) {
+      console.log(`服务器返回的剪贴板数据:`, {
+        id: id,
+        isProtected: data.clipboard.isProtected,
+        createdAt: new Date(data.clipboard.createdAt).toLocaleString(),
+        expiresAt: new Date(data.clipboard.expiresAt).toLocaleString()
+      });
+    }
+    
     return true;
   } catch (error) {
     console.error('服务器保存剪贴板内容出错:', error);

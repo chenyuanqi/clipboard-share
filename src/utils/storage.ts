@@ -68,31 +68,78 @@ export function getClipboard(id: string): ClipboardData | null {
  * @param content 初始内容
  * @param isProtected 是否密码保护
  * @param expirationHours 过期小时数
+ * @param createdAt 创建时间（可选），如果不提供则使用当前时间
  * @returns 新创建的剪贴板数据
  */
 export function createClipboard(
   id: string,
   content: string = '',
   isProtected: boolean = false,
-  expirationHours: number = 24
+  expirationHours: number = 24,
+  createdAt?: number
 ): ClipboardData {
-  const now = Date.now();
-  const expiresAt = calculateExpirationTime(expirationHours);
-  
-  const newClipboard: ClipboardData = {
-    id,
-    content,
-    isProtected,
-    createdAt: now,
-    expiresAt,
-    lastModified: now,
-  };
-  
-  const clipboards = getAllClipboards();
-  clipboards[id] = newClipboard;
-  saveAllClipboards(clipboards);
-  
-  return newClipboard;
+  try {
+    console.log(`【详细日志】createClipboard函数被调用:`);
+    console.log(`【详细日志】- id = ${id}`);
+    console.log(`【详细日志】- content长度 = ${content.length}字符`);
+    console.log(`【详细日志】- isProtected = ${isProtected} (${typeof isProtected})`);
+    console.log(`【详细日志】- isProtected详细检查 = ${JSON.stringify({
+      "isProtected === true": isProtected === true,
+      "isProtected === false": isProtected === false,
+      "typeof isProtected": typeof isProtected,
+      "Boolean(isProtected)": Boolean(isProtected),
+      "!!isProtected": !!isProtected
+    })}`);
+    console.log(`【详细日志】- expirationHours = ${expirationHours}`);
+    console.log(`【详细日志】- createdAt = ${createdAt ? new Date(createdAt).toLocaleString() : '未提供'}`);
+    
+    // 确保isProtected参数正确转换为布尔值
+    const protectedStatus = Boolean(isProtected);
+    
+    // 获取当前时间作为创建时间，或使用传入的创建时间
+    const actualCreatedAt = createdAt || Date.now();
+    
+    // 基于创建时间计算过期时间
+    const expiresAt = calculateExpirationTime(expirationHours, actualCreatedAt);
+    
+    const clipboard: ClipboardData = {
+      id,
+      content,
+      isProtected: protectedStatus,
+      createdAt: actualCreatedAt,
+      expiresAt,
+      lastModified: actualCreatedAt
+    };
+    
+    // 保存到本地存储
+    try {
+      const clipboards = getAllClipboards();
+      clipboards[id] = clipboard;
+      saveAllClipboards(clipboards);
+      console.log(`创建剪贴板成功: ID=${id}, 创建时间=${new Date(actualCreatedAt).toLocaleString()}, 过期时间=${new Date(expiresAt).toLocaleString()}`);
+    } catch (error) {
+      console.error('保存剪贴板失败:', error);
+    }
+    
+    // 同时保存到localStorage作为备份
+    try {
+      localStorage.setItem(`clipboard-${id}`, JSON.stringify(clipboard));
+    } catch (error) {
+      console.error('保存剪贴板到localStorage失败:', error);
+    }
+    
+    // 返回前记录最终结果
+    console.log(`【详细日志】createClipboard返回结果:`);
+    console.log(`【详细日志】- id = ${clipboard.id}`);
+    console.log(`【详细日志】- isProtected = ${clipboard.isProtected} (${typeof clipboard.isProtected})`);
+    console.log(`【详细日志】- createdAt = ${new Date(clipboard.createdAt).toLocaleString()}`);
+    console.log(`【详细日志】- expiresAt = ${new Date(clipboard.expiresAt).toLocaleString()}`);
+    
+    return clipboard;
+  } catch (error) {
+    console.error('创建剪贴板出错:', error);
+    throw error;
+  }
 }
 
 /**
@@ -102,46 +149,42 @@ export function createClipboard(
  * @returns 更新后的剪贴板数据，如不存在则返回null
  */
 export function updateClipboardContent(id: string, content: string): ClipboardData | null {
-  if (typeof window === 'undefined') {
-    console.error('updateClipboardContent 被在服务器端调用，这是不允许的');
-    return null;
-  }
-
   try {
-    const clipboards = getAllClipboards();
-    const clipboard = clipboards[id];
-    
+    // 获取现有剪贴板数据
+    const clipboard = getClipboard(id);
     if (!clipboard) {
-      console.warn(`找不到ID为 ${id} 的剪贴板`);
+      console.error(`更新内容失败: ID=${id} 的剪贴板不存在`);
       return null;
     }
     
-    if (isExpired(clipboard.expiresAt)) {
-      console.warn(`ID为 ${id} 的剪贴板已过期`);
+    // 更新内容和最后修改时间，但保持创建时间和过期时间不变
+    const updatedClipboard: ClipboardData = {
+      ...clipboard,
+      content,
+      lastModified: Date.now()
+    };
+    
+    // 保存到localStorage
+    try {
+      const clipboards = getAllClipboards();
+      clipboards[id] = updatedClipboard;
+      saveAllClipboards(clipboards);
+      console.log(`更新剪贴板内容成功: ID=${id}`);
+    } catch (error) {
+      console.error('保存更新后的剪贴板失败:', error);
       return null;
     }
     
-    clipboard.content = content;
-    clipboard.lastModified = Date.now();
-    
-    clipboards[id] = clipboard;
-    
-    // 保存并验证是否保存成功
-    saveAllClipboards(clipboards);
-    
-    // 立即验证内容是否已保存
-    const savedClipboards = getAllClipboards();
-    const savedClipboard = savedClipboards[id];
-    
-    if (!savedClipboard || savedClipboard.content !== content) {
-      console.error('内容保存失败，保存后的内容与期望不符');
-      return null;
+    // 同时更新备份存储
+    try {
+      localStorage.setItem(`clipboard-${id}`, JSON.stringify(updatedClipboard));
+    } catch (error) {
+      console.error('更新备份存储失败:', error);
     }
     
-    console.log(`剪贴板 ${id} 内容已成功保存，长度: ${content.length}字符`);
-    return clipboard;
+    return updatedClipboard;
   } catch (error) {
-    console.error('更新剪贴板内容失败:', error);
+    console.error('更新剪贴板内容出错:', error);
     return null;
   }
 }

@@ -6,7 +6,7 @@ export default function NotFoundPage() {
       <header className="w-full p-4 sm:p-6 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto">
           <Link href="/" className="text-2xl font-bold text-gray-800 dark:text-white">
-            剪贴板共享
+          云剪 ｜ 剪贴板共享
           </Link>
         </div>
       </header>

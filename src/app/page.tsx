@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { generateUniqueId } from "@/utils/helpers";
-import { getClipboard } from "@/utils/storage";
+import { getClipboard, saveClipboardPassword } from "@/utils/storage";
 import { savePasswordToServer } from "@/utils/api";
 
 // 会话存储的键，用于授权信息
@@ -48,6 +48,11 @@ export default function Home() {
   const handleCreateClipboard = async () => {
     setIsCreating(true);
     try {
+      console.log(`【详细日志】开始创建剪贴板:`);
+      console.log(`【详细日志】- 自定义路径 = ${customPath.trim() || '(未设置)'}`);
+      console.log(`【详细日志】- 密码保护 = ${password ? '是' : '否'}`);
+      console.log(`【详细日志】- 过期时间 = ${expiration}小时`);
+      
       // 如果指定了自定义路径，先检查是否已存在
       if (customPath.trim()) {
         const pathExists = checkPathExists(customPath);
@@ -68,15 +73,36 @@ export default function Home() {
             // 用户选择使用随机路径
             const randomPath = generateUniqueId();
             
-            // 如果设置了密码，尝试保存到服务器和会话存储
+            // 如果设置了密码，尝试保存到服务器
             if (password) {
               console.log(`尝试将剪贴板 ${randomPath} 的密码保存到服务器...`);
               await savePasswordToServer(randomPath, password);
               
-              // 不再保存到会话存储，要求用户输入密码
+              // 保存到本地
+              saveClipboardPassword(randomPath, password);
+              
+              // 创建但需要验证密码才能访问
+              const url = `/clipboard/${randomPath}?new=true&protected=true&exp=${expiration}`;
+              console.log(`【详细日志】准备跳转到受保护的剪贴板页面:`);
+              console.log(`【详细日志】- 完整URL = ${url}`);
+              console.log(`【详细日志】- URL参数分析:`);
+              console.log(`【详细日志】  - path = ${randomPath}`);
+              console.log(`【详细日志】  - new = true`);
+              console.log(`【详细日志】  - protected = true`);
+              console.log(`【详细日志】  - exp = ${expiration}`);
+              router.push(url);
+            } else {
+              // 无密码剪贴板，直接进入并编辑
+              const url = `/clipboard/${randomPath}?new=true&exp=${expiration}&direct=true`;
+              console.log(`【详细日志】准备跳转到无保护的剪贴板页面:`);
+              console.log(`【详细日志】- 完整URL = ${url}`);
+              console.log(`【详细日志】- URL参数分析:`);
+              console.log(`【详细日志】  - path = ${randomPath}`);
+              console.log(`【详细日志】  - new = true`);
+              console.log(`【详细日志】  - exp = ${expiration}`);
+              console.log(`【详细日志】  - direct = true`);
+              router.push(url);
             }
-            
-            router.push(`/clipboard/${randomPath}?new=true${password ? '&protected=true' : ''}&exp=${expiration}`);
             return;
           }
         }
@@ -85,16 +111,37 @@ export default function Home() {
       // 生成一个唯一ID，如果用户未指定自定义路径
       const path = customPath.trim() || generateUniqueId();
       
-      // 如果设置了密码，尝试保存到服务器
+      // 如果设置了密码，尝试保存到服务器和本地
       if (password) {
-        console.log(`尝试将剪贴板 ${path} 的密码保存到服务器...`);
+        console.log(`准备创建有密码保护的剪贴板：路径=${path}, 密码=${password?'已设置':'未设置'}`);
         await savePasswordToServer(path, password);
         
-        // 不再保存到会话存储，要求用户输入密码
+        // 本地也保存密码
+        saveClipboardPassword(path, password);
+        
+        // 创建但需要验证密码才能访问
+        const url = `/clipboard/${path}?new=true&protected=true&exp=${expiration}`;
+        console.log(`【详细日志】准备跳转到受保护的剪贴板页面:`);
+        console.log(`【详细日志】- 完整URL = ${url}`);
+        console.log(`【详细日志】- URL参数分析:`);
+        console.log(`【详细日志】  - path = ${path}`);
+        console.log(`【详细日志】  - new = true`);
+        console.log(`【详细日志】  - protected = true`);
+        console.log(`【详细日志】  - exp = ${expiration}`);
+        router.push(url);
+      } else {
+        console.log(`准备创建无密码保护的剪贴板：路径=${path}`);
+        // 无密码剪贴板，直接进入并编辑
+        const url = `/clipboard/${path}?new=true&exp=${expiration}&direct=true`;
+        console.log(`【详细日志】准备跳转到无保护的剪贴板页面:`);
+        console.log(`【详细日志】- 完整URL = ${url}`);
+        console.log(`【详细日志】- URL参数分析:`);
+        console.log(`【详细日志】  - path = ${path}`);
+        console.log(`【详细日志】  - new = true`);
+        console.log(`【详细日志】  - exp = ${expiration}`);
+        console.log(`【详细日志】  - direct = true`);
+        router.push(url);
       }
-      
-      // 重定向到新创建的剪贴板页面，如果设置了密码，传递password参数
-      router.push(`/clipboard/${path}?new=true${password ? '&protected=true' : ''}&exp=${expiration}`);
     } catch (error) {
       console.error("创建剪贴板时出错:", error);
       alert("创建剪贴板失败，请重试");
