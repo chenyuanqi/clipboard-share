@@ -240,19 +240,6 @@ export async function POST(request: Request) {
     const data = await request.json();
     const { id, content, isProtected, expirationHours } = data;
     
-    console.log(`【详细日志】POST请求接收到的参数:`);
-    console.log(`【详细日志】- id = ${id}`);
-    console.log(`【详细日志】- content长度 = ${content ? content.length : 0}字符`);
-    console.log(`【详细日志】- isProtected = ${isProtected} (${typeof isProtected})`);
-    console.log(`【详细日志】- isProtected严格比较:`);
-    console.log(`【详细日志】  - isProtected === true: ${isProtected === true}`);
-    console.log(`【详细日志】  - isProtected === false: ${isProtected === false}`);
-    console.log(`【详细日志】  - isProtected == true: ${isProtected == true}`);
-    console.log(`【详细日志】  - isProtected == false: ${isProtected == false}`);
-    console.log(`【详细日志】  - Boolean(isProtected): ${Boolean(isProtected)}`);
-    console.log(`【详细日志】  - 字符串表示: '${String(isProtected)}'`);
-    console.log(`【详细日志】- expirationHours = ${expirationHours || 24}`);
-    
     if (!id) {
       console.log('POST请求: 未提供ID参数');
       return NextResponse.json({ error: '未提供ID参数' }, { status: 400 });

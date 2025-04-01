@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { generateUniqueId } from "@/utils/helpers";
 import { getClipboard, saveClipboardPassword } from "@/utils/storage";
 import { savePasswordToServer } from "@/utils/api";
+import Dialog from "@/components/Dialog";
 
 // 会话存储的键，用于授权信息
 const SESSION_AUTHORIZED_KEY = 'clipboard-authorized';
@@ -22,6 +23,13 @@ export default function Home() {
   const [expiration, setExpiration] = useState("24"); // 默认24小时
   const [isCreating, setIsCreating] = useState(false);
   const [pathError, setPathError] = useState("");
+  
+  // 对话框状态
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [dialogData, setDialogData] = useState({
+    path: "",
+    action: ""
+  });
 
   // 检查自定义路径是否已存在
   const checkPathExists = (path: string) => {
@@ -45,72 +53,20 @@ export default function Home() {
     }
   };
 
-  const handleCreateClipboard = async () => {
-    setIsCreating(true);
+  // 处理查看已有剪贴板的操作
+  const handleViewExisting = () => {
+    router.push(`/clipboard/${dialogData.path.trim()}`);
+  };
+
+  // 处理创建随机路径剪贴板的操作
+  const handleCreateWithRandomPath = async () => {
+    const randomPath = generateUniqueId();
+    await createClipboardWithPath(randomPath);
+  };
+
+  // 使用指定路径创建剪贴板
+  const createClipboardWithPath = async (path: string) => {
     try {
-      console.log(`【详细日志】开始创建剪贴板:`);
-      console.log(`【详细日志】- 自定义路径 = ${customPath.trim() || '(未设置)'}`);
-      console.log(`【详细日志】- 密码保护 = ${password ? '是' : '否'}`);
-      console.log(`【详细日志】- 过期时间 = ${expiration}小时`);
-      
-      // 如果指定了自定义路径，先检查是否已存在
-      if (customPath.trim()) {
-        const pathExists = checkPathExists(customPath);
-        
-        if (pathExists) {
-          // 询问用户是否要访问已有剪贴板
-          const confirmView = window.confirm(
-            "此路径已存在剪贴板，是否查看已有内容？\n\n" +
-            "点击「确定」查看已有内容\n" +
-            "点击「取消」使用随机路径创建新剪贴板"
-          );
-          
-          if (confirmView) {
-            // 用户选择查看已有内容，直接跳转到该路径（不带new参数）
-            router.push(`/clipboard/${customPath.trim()}`);
-            return;
-          } else {
-            // 用户选择使用随机路径
-            const randomPath = generateUniqueId();
-            
-            // 如果设置了密码，尝试保存到服务器
-            if (password) {
-              console.log(`尝试将剪贴板 ${randomPath} 的密码保存到服务器...`);
-              await savePasswordToServer(randomPath, password);
-              
-              // 保存到本地
-              saveClipboardPassword(randomPath, password);
-              
-              // 创建但需要验证密码才能访问
-              const url = `/clipboard/${randomPath}?new=true&protected=true&exp=${expiration}`;
-              console.log(`【详细日志】准备跳转到受保护的剪贴板页面:`);
-              console.log(`【详细日志】- 完整URL = ${url}`);
-              console.log(`【详细日志】- URL参数分析:`);
-              console.log(`【详细日志】  - path = ${randomPath}`);
-              console.log(`【详细日志】  - new = true`);
-              console.log(`【详细日志】  - protected = true`);
-              console.log(`【详细日志】  - exp = ${expiration}`);
-              router.push(url);
-            } else {
-              // 无密码剪贴板，直接进入并编辑
-              const url = `/clipboard/${randomPath}?new=true&exp=${expiration}&direct=true`;
-              console.log(`【详细日志】准备跳转到无保护的剪贴板页面:`);
-              console.log(`【详细日志】- 完整URL = ${url}`);
-              console.log(`【详细日志】- URL参数分析:`);
-              console.log(`【详细日志】  - path = ${randomPath}`);
-              console.log(`【详细日志】  - new = true`);
-              console.log(`【详细日志】  - exp = ${expiration}`);
-              console.log(`【详细日志】  - direct = true`);
-              router.push(url);
-            }
-            return;
-          }
-        }
-      }
-      
-      // 生成一个唯一ID，如果用户未指定自定义路径
-      const path = customPath.trim() || generateUniqueId();
-      
       // 如果设置了密码，尝试保存到服务器和本地
       if (password) {
         console.log(`准备创建有密码保护的剪贴板：路径=${path}, 密码=${password?'已设置':'未设置'}`);
@@ -142,6 +98,39 @@ export default function Home() {
         console.log(`【详细日志】  - direct = true`);
         router.push(url);
       }
+    } catch (error) {
+      console.error("创建剪贴板时出错:", error);
+      alert("创建剪贴板失败，请重试");
+    }
+  };
+
+  const handleCreateClipboard = async () => {
+    setIsCreating(true);
+    try {
+      console.log(`【详细日志】开始创建剪贴板:`);
+      console.log(`【详细日志】- 自定义路径 = ${customPath.trim() || '(未设置)'}`);
+      console.log(`【详细日志】- 密码保护 = ${password ? '是' : '否'}`);
+      console.log(`【详细日志】- 过期时间 = ${expiration}小时`);
+      
+      // 如果指定了自定义路径，先检查是否已存在
+      if (customPath.trim()) {
+        const pathExists = checkPathExists(customPath);
+        
+        if (pathExists) {
+          // 打开确认对话框，而不是使用原生confirm
+          setDialogData({
+            path: customPath.trim(),
+            action: "check_existing"
+          });
+          setIsDialogOpen(true);
+          return;
+        }
+      }
+      
+      // 生成一个唯一ID，如果用户未指定自定义路径
+      const path = customPath.trim() || generateUniqueId();
+      await createClipboardWithPath(path);
+      
     } catch (error) {
       console.error("创建剪贴板时出错:", error);
       alert("创建剪贴板失败，请重试");
@@ -234,8 +223,8 @@ export default function Home() {
 
             <button
               onClick={handleCreateClipboard}
-              disabled={isCreating}
-              className={`w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:transform active:scale-95 text-white font-medium rounded-lg transition-all duration-150 flex items-center justify-center ${isCreating ? 'opacity-70 cursor-not-allowed' : ''}`}
+              disabled={isCreating || isDialogOpen}
+              className={`w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:transform active:scale-95 text-white font-medium rounded-lg transition-all duration-150 flex items-center justify-center ${(isCreating || isDialogOpen) ? 'opacity-70 cursor-not-allowed' : ''}`}
             >
               {isCreating ? (
                 <>
@@ -276,6 +265,31 @@ export default function Home() {
       <footer className="p-4 sm:p-6 border-t border-gray-200 dark:border-gray-800 text-center text-gray-600 dark:text-gray-400">
         <p>© {new Date().getFullYear()} 云剪 - 安全地分享您的内容</p>
       </footer>
+      
+      {/* 路径已存在的确认对话框 */}
+      <Dialog
+        isOpen={isDialogOpen}
+        onClose={() => {
+          setIsDialogOpen(false);
+          setIsCreating(false);
+        }}
+        onConfirm={() => {
+          setIsDialogOpen(false);
+          if (dialogData.action === "check_existing") {
+            handleViewExisting();
+          }
+        }}
+        onCancel={() => {
+          // 用户选择创建新的剪贴板
+          if (dialogData.action === "check_existing") {
+            handleCreateWithRandomPath();
+          }
+        }}
+        title="路径已存在"
+        message={`您输入的路径「${dialogData.path}」已经存在一个剪贴板内容。\n\n您是否想查看已有内容？\n- 点击「查看」访问已有剪贴板\n- 点击「创建新的」将使用随机路径创建新剪贴板`}
+        confirmText="查看"
+        cancelText="创建新的"
+      />
     </div>
   );
 }
