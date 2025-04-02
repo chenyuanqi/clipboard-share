@@ -1,144 +1,183 @@
-# 云剪 (Cloud Clipboard) 部署指南
+# 云剪 (Cloud Clipboard) Docker 部署指南
 
-本文档提供了将云剪应用从开发环境编译并部署到生产环境的详细步骤。
+本文档提供了使用 Docker 在 Ubuntu 16.04 上部署云剪应用的详细步骤。
 
 ## 目录
-- [编译项目](#编译项目)
-- [创建部署包](#创建部署包)
-- [生产服务器配置](#生产服务器配置)
+- [环境要求](#环境要求)
+- [Docker 环境配置](#docker-环境配置)
+- [项目构建](#项目构建)
+- [Docker 部署](#docker-部署)
 - [Nginx 配置](#nginx-配置)
-- [应用启动与管理](#应用启动与管理)
-- [SSL 配置](#ssl-配置)
 - [维护与更新](#维护与更新)
 - [故障排除](#故障排除)
 
-## 编译项目
+## 环境要求
 
-### 前提条件
-- Node.js 18.17 或更高版本
-- npm 或 yarn 或 pnpm
+### 服务器要求
+- Ubuntu 16.04 LTS
+- 至少 1GB RAM
+- 至少 10GB 磁盘空间
 
-### 步骤
+### 软件要求
+- Docker 20.10+
+- Docker Compose 2.0+
+- Nginx 1.18+
 
-1. **准备环境变量**
+## Docker 环境配置
 
-   创建生产环境配置文件:
-   ```bash
-   cat > .env.production << EOL
-   NODE_ENV=production
-   # 添加密码加密盐值 (使用强随机值替换)
-   PASSWORD_SALT=your-strong-secret-salt-for-production
-   EOL
-   ```
-
-2. **安装依赖并构建**
-
-   ```bash
-   # 安装依赖
-   npm ci
-   
-   # 清除旧的构建文件
-   rm -rf .next
-   
-   # 构建生产版本
-   npm run build
-   ```
-
-3. **验证构建**
-
-   ```bash
-   # 启动生产服务器进行测试
-   npm start
-   ```
-
-   访问 http://localhost:3000 验证应用是否正常工作。
-
-## 创建部署包
-
-创建一个优化的部署包，仅包含生产环境必需的文件：
+### 1. 安装 Docker
 
 ```bash
-# 创建部署目录
-mkdir -p deploy
+# 更新包索引
+sudo apt-get update
 
-# 复制必要文件
-cp -r .next deploy/
-cp -r public deploy/
-cp package.json deploy/
-cp package-lock.json deploy/
-cp next.config.js deploy/
-cp .env.production deploy/
+# 安装必要的依赖
+sudo apt-get install -y \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    software-properties-common
 
-# 创建数据目录
-mkdir -p deploy/data
+# 添加 Docker 官方 GPG 密钥
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
 
-# 压缩部署包
-tar -czvf clipboard-production.tar.gz deploy/
+# 添加 Docker 仓库
+sudo add-apt-repository \
+   "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+   $(lsb_release -cs) \
+   stable"
+
+# 安装 Docker
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+
+# 将当前用户添加到 docker 组
+sudo usermod -aG docker $USER
 ```
 
-生成的 `clipboard-production.tar.gz` 文件包含了所有部署所需的文件。
-
-## 生产服务器配置
-
-### 前提条件
-- Linux 服务器 (推荐 Ubuntu 20.04/22.04 LTS)
-- Node.js 18.17+
-- Nginx
-- PM2 (用于进程管理)
-
-### 安装必要软件
+### 2. 安装 Docker Compose
 
 ```bash
-# 更新系统
-sudo apt update
-sudo apt upgrade -y
+# 下载 Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 
-# 安装 Node.js
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt install -y nodejs
+# 添加执行权限
+sudo chmod +x /usr/local/bin/docker-compose
+```
 
+### 3. 安装 Nginx
+
+```bash
 # 安装 Nginx
-sudo apt install -y nginx
-
-# 安装 PM2
-sudo npm install -g pm2
+sudo apt-get install -y nginx
 ```
 
-### 部署应用
+## 项目构建
 
-1. **上传部署包**
+### 1. 准备项目文件
 
-   将 `clipboard-production.tar.gz` 上传到服务器：
-   ```bash
-   scp clipboard-production.tar.gz user@your-server-ip:/tmp/
-   ```
+创建项目目录结构：
 
-2. **解压并配置**
+```bash
+mkdir -p clipboard-share
+cd clipboard-share
+```
 
-   ```bash
-   # 在服务器上执行
-   cd /var/www
-   sudo mkdir -p clipboard-share
-   sudo tar -xzvf /tmp/clipboard-production.tar.gz -C /var/www/clipboard-share --strip-components=1
-   
-   # 设置权限
-   sudo chown -R www-data:www-data /var/www/clipboard-share
-   sudo chmod 755 /var/www/clipboard-share/data
-   
-   # 安装生产依赖
-   cd /var/www/clipboard-share
-   sudo npm install --production
-   ```
+### 2. 创建 Dockerfile
+
+创建 `Dockerfile`：
+
+```dockerfile
+# 使用 Node.js 18 作为基础镜像
+FROM node:18-alpine
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制 package.json 和 package-lock.json
+COPY package*.json ./
+
+# 安装依赖
+RUN npm ci
+
+# 复制源代码
+COPY . .
+
+# 构建应用
+RUN npm run build
+
+# 暴露端口
+EXPOSE 3000
+
+# 启动命令
+CMD ["npm", "start"]
+```
+
+### 3. 创建 docker-compose.yml
+
+创建 `docker-compose.yml`：
+
+```yaml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: clipboard-share
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PASSWORD_SALT=your-strong-secret-salt-for-production
+    networks:
+      - clipboard-network
+
+networks:
+  clipboard-network:
+    driver: bridge
+```
+
+### 4. 创建数据目录
+
+```bash
+mkdir -p data
+chmod 777 data
+```
+
+## Docker 部署
+
+### 1. 构建和启动容器
+
+```bash
+# 构建镜像
+docker-compose build
+
+# 启动服务
+docker-compose up -d
+```
+
+### 2. 检查服务状态
+
+```bash
+# 查看容器状态
+docker-compose ps
+
+# 查看容器日志
+docker-compose logs -f
+```
 
 ## Nginx 配置
 
-创建 Nginx 服务器配置：
+### 1. 创建 Nginx 配置文件
 
 ```bash
 sudo nano /etc/nginx/sites-available/clipboard-share
 ```
 
-添加以下配置内容：
+添加以下配置：
 
 ```nginx
 # Nginx 缓存配置
@@ -160,25 +199,18 @@ server {
     
     # 静态文件缓存
     location /_next/static/ {
-        alias /var/www/clipboard-share/.next/static/;
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
         expires 365d;
         add_header Cache-Control "public, max-age=31536000, immutable";
-        access_log off;
-    }
-    
-    # 为 public 目录中的静态资源设置长缓存
-    location /images/ {
-        alias /var/www/clipboard-share/public/images/;
-        expires 365d;
-        add_header Cache-Control "public, max-age=31536000, immutable";
-        access_log off;
-    }
-    
-    # favicon 缓存
-    location = /favicon.ico {
-        alias /var/www/clipboard-share/public/favicon.ico;
-        expires 30m;
-        add_header Cache-Control "public, max-age=1800";
         access_log off;
     }
     
@@ -194,7 +226,6 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
-        # API 请求不缓存
         add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate";
         expires off;
     }
@@ -210,145 +241,92 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
-        # 启用缓存
         proxy_cache clipboard_cache;
-        proxy_cache_valid 200 10m;  # 成功响应缓存10分钟
+        proxy_cache_valid 200 10m;
         proxy_cache_bypass $http_cache_control;
         add_header X-Cache-Status $upstream_cache_status;
         
-        # 允许在更新缓存时使用过期缓存
         proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
         
-        # 针对SEO优化，确保搜索引擎可以正确索引
         add_header X-Robots-Tag "index, follow";
     }
 }
 ```
 
-启用配置并重启 Nginx：
+### 2. 启用配置
 
 ```bash
+# 创建符号链接
 sudo ln -s /etc/nginx/sites-available/clipboard-share /etc/nginx/sites-enabled/
-sudo nginx -t  # 测试配置
+
+# 测试配置
+sudo nginx -t
+
+# 重启 Nginx
 sudo systemctl restart nginx
-```
-
-## 应用启动与管理
-
-使用 PM2 管理应用：
-
-```bash
-# 切换到应用目录
-cd /var/www/clipboard-share
-
-# 启动应用
-sudo -u www-data pm2 start npm --name "clipboard-share" -- start
-
-# 设置开机自启
-sudo -u www-data pm2 save
-sudo pm2 startup
-sudo systemctl enable pm2-www-data
-```
-
-常用 PM2 命令：
-
-```bash
-# 重启应用
-pm2 restart clipboard-share
-
-# 查看日志
-pm2 logs clipboard-share
-
-# 监控应用状态
-pm2 monit
-```
-
-## SSL 配置
-
-使用 Let's Encrypt 配置 HTTPS：
-
-```bash
-# 安装 Certbot
-sudo apt install -y certbot python3-certbot-nginx
-
-# 获取证书
-sudo certbot --nginx -d your-domain.com -d www.your-domain.com
-
-# 测试自动续期
-sudo certbot renew --dry-run
 ```
 
 ## 维护与更新
 
-### 更新应用
+### 1. 更新应用
 
 当有新版本需要部署时：
 
-1. 在本地编译新版本并创建部署包
-2. 上传部署包到服务器
-3. 备份当前数据
-4. 解压新版本到临时目录
-5. 替换旧文件并保留数据目录
-6. 重启应用
+```bash
+# 拉取最新代码
+git pull
 
-示例脚本：
+# 重新构建并重启容器
+docker-compose down
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+### 2. 备份数据
+
+创建备份脚本 `backup.sh`：
 
 ```bash
 #!/bin/bash
-# 更新脚本 - 在服务器上执行
+BACKUP_DIR="/var/backups/clipboard"
+DATE=$(date +%Y%m%d)
 
-# 备份当前数据
-sudo cp -r /var/www/clipboard-share/data /var/www/data-backup-$(date +%Y%m%d)
+# 创建备份目录
+mkdir -p $BACKUP_DIR
 
-# 解压新版本到临时目录
-sudo mkdir -p /tmp/clipboard-new
-sudo tar -xzvf /tmp/clipboard-production.tar.gz -C /tmp/clipboard-new --strip-components=1
+# 备份数据目录
+tar -czf $BACKUP_DIR/data-$DATE.tar.gz ./data
 
-# 停止应用
-sudo -u www-data pm2 stop clipboard-share
-
-# 替换应用文件，保留数据目录
-sudo rsync -av --exclude='data/' /tmp/clipboard-new/ /var/www/clipboard-share/
-
-# 安装依赖
-cd /var/www/clipboard-share
-sudo npm install --production
-
-# 重启应用
-sudo -u www-data pm2 restart clipboard-share
-
-# 清理
-sudo rm -rf /tmp/clipboard-new
+# 删除7天前的备份
+find $BACKUP_DIR -name "data-*.tar.gz" -mtime +7 -delete
 ```
 
-### 定期备份
-
-创建定期备份的 cron 任务：
+添加定时任务：
 
 ```bash
-# 编辑crontab
+# 编辑 crontab
 sudo crontab -e
 
 # 添加每日备份任务 (凌晨3点)
-0 3 * * * tar -czf /var/backups/clipboard-data-$(date +\%Y\%m\%d).tar.gz /var/www/clipboard-share/data && find /var/backups/clipboard-data-* -mtime +7 -delete
+0 3 * * * /path/to/backup.sh
 ```
 
 ## 故障排除
 
-### 应用无法启动
+### 1. 容器无法启动
 
-检查日志：
+检查容器日志：
 
 ```bash
-pm2 logs clipboard-share
+docker-compose logs -f
 ```
 
 常见问题解决方案：
 - 端口冲突：检查 3000 端口是否被占用
 - 权限问题：确保 data 目录有正确的读写权限
-- 环境变量：检查 .env.production 文件是否存在且正确
+- 环境变量：检查 .env 文件是否存在且正确
 
-### Nginx 无法代理请求
+### 2. Nginx 无法代理请求
 
 检查 Nginx 错误日志：
 
@@ -356,20 +334,25 @@ pm2 logs clipboard-share
 sudo tail -f /var/log/nginx/error.log
 ```
 
-如果看到"Connection refused"错误，确保 Node.js 应用正在运行。
+如果看到"Connection refused"错误，确保 Docker 容器正在运行。
 
-### 内存不足
+### 3. 内存不足
 
-如果服务器内存较小，可以优化 Node.js 内存使用：
+如果服务器内存较小，可以在 docker-compose.yml 中添加内存限制：
 
-```bash
-# 使用内存限制启动应用
-sudo -u www-data pm2 start npm --name "clipboard-share" -- start -- --max-old-space-size=256
+```yaml
+services:
+  app:
+    # ... 其他配置 ...
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 ```
 
 ---
 
 如有其他部署或维护问题，请参考:
-- [Next.js 部署文档](https://nextjs.org/docs/deployment)
-- [PM2 文档](https://pm2.keymetrics.io/docs/usage/quick-start/)
+- [Docker 文档](https://docs.docker.com/)
+- [Docker Compose 文档](https://docs.docker.com/compose/)
 - [Nginx 文档](https://nginx.org/en/docs/) 
