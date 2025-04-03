@@ -13,16 +13,25 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY package*.json ./
 
 # 安装依赖
-RUN npm ci
+RUN npm install
+
+# 创建data目录
+RUN mkdir -p /app/data && chmod 777 /app/data
 
 # 复制源代码
 COPY . .
+
+# 确保目录权限正确
+RUN chown -R node:node /app
 
 # 构建应用
 RUN npm run build
 
 # 暴露端口
 EXPOSE 3000
+
+# 使用非root用户运行
+USER node
 
 # 启动命令
 CMD ["npm", "start"] 
