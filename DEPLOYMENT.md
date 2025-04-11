@@ -14,7 +14,7 @@
 ## 环境要求
 
 ### 服务器要求
-- Ubuntu 16.04 LTS
+- Ubuntu 16.04 LTS 或更高版本
 - 至少 1GB RAM
 - 至少 10GB 磁盘空间
 
@@ -22,6 +22,7 @@
 - Docker 20.10+
 - Docker Compose 2.0+
 - Nginx 1.18+
+- Node.js 18.17+ (本地开发)
 
 ## Docker 环境配置
 
@@ -94,20 +95,34 @@ FROM node:18-alpine
 # 设置工作目录
 WORKDIR /app
 
+# 设置环境变量
+ENV NODE_ENV=production
+ENV DISABLE_ESLINT_PLUGIN=true
+ENV NEXT_TELEMETRY_DISABLED=1
+
 # 复制 package.json 和 package-lock.json
 COPY package*.json ./
 
 # 安装依赖
-RUN npm ci
+RUN npm install
+
+# 创建data目录
+RUN mkdir -p /app/data && chmod 777 /app/data
 
 # 复制源代码
 COPY . .
+
+# 确保目录权限正确
+RUN chown -R node:node /app
 
 # 构建应用
 RUN npm run build
 
 # 暴露端口
 EXPOSE 3000
+
+# 使用非root用户运行
+USER node
 
 # 启动命令
 CMD ["npm", "start"]
@@ -132,6 +147,7 @@ services:
     environment:
       - NODE_ENV=production
       - PASSWORD_SALT=your-strong-secret-salt-for-production
+      - NEXT_PUBLIC_SERVER_URL=https://your-domain.com
     networks:
       - clipboard-network
 
@@ -145,6 +161,21 @@ networks:
 ```bash
 mkdir -p data
 chmod 777 data
+```
+
+### 5. 配置环境变量
+
+创建 `.env` 文件：
+
+```
+# 用于加密的密钥
+PASSWORD_SALT="clipboard-share-secure-salt-key"
+
+# 服务器URL (在生产环境中替换为你的实际域名)
+NEXT_PUBLIC_SERVER_URL="https://your-domain.com"
+
+# 日志级别
+LOG_LEVEL="error"
 ```
 
 ## Docker 部署
@@ -270,84 +301,124 @@ sudo systemctl restart nginx
 
 ### 1. 更新应用
 
-当有新版本需要部署时：
+当有新版本发布时，按照以下步骤更新应用:
 
 ```bash
+# 进入项目目录
+cd clipboard-share
+
 # 拉取最新代码
 git pull
 
-# 重新构建并重启容器
+# 重新构建并启动容器
 docker-compose down
-docker-compose build --no-cache
+docker-compose build
 docker-compose up -d
 ```
 
 ### 2. 备份数据
 
-创建备份脚本 `backup.sh`：
+定期备份 `data` 目录:
 
 ```bash
-#!/bin/bash
-BACKUP_DIR="/var/backups/clipboard"
-DATE=$(date +%Y%m%d)
+# 创建备份
+tar -czvf clipboard-backup-$(date +%Y%m%d).tar.gz data/
 
-# 创建备份目录
-mkdir -p $BACKUP_DIR
-
-# 备份数据目录
-tar -czf $BACKUP_DIR/data-$DATE.tar.gz ./data
-
-# 删除7天前的备份
-find $BACKUP_DIR -name "data-*.tar.gz" -mtime +7 -delete
+# 存储到安全位置
+mv clipboard-backup-*.tar.gz /path/to/backup/location/
 ```
 
-添加定时任务：
+### 项目配置特别说明
+
+#### ESLint 和 TypeScript 配置
+
+项目包含了特定的 ESLint 和 TypeScript 配置，在生产环境构建中可能会遇到严格的类型检查和代码风格检查。以下是相关的配置文件:
+
+1. **ESLint 配置**:
+   - 主配置: `eslint.config.mjs` (新的扁平配置格式)
+   - 兼容配置: `.eslintrc.json` (传统配置格式)
+
+2. **TypeScript 配置**:
+   - `tsconfig.json`: 定义 TypeScript 编译选项和路径别名
+
+3. **Next.js 配置**:
+   - `next.config.mjs`: 包含 ESLint 和 TypeScript 构建时行为配置
+
+如果在生产环境构建时遇到 ESLint 或 TypeScript 错误，有以下选项:
 
 ```bash
-# 编辑 crontab
-sudo crontab -e
-
-# 添加每日备份任务 (凌晨3点)
-0 3 * * * /path/to/backup.sh
+# 使用忽略 ESLint 警告的构建命令
+npm run build:ignore-lint
+# 或
+pnpm run build:ignore-lint
 ```
+
+或者，可以修改 `next.config.mjs` 文件中的配置:
+
+```js
+// next.config.mjs
+const nextConfig = {
+  // ... 其他配置
+  
+  // ESLint配置
+  eslint: {
+    // 即使有错误也继续构建
+    ignoreDuringBuilds: true,
+  },
+  
+  // TypeScript配置
+  typescript: {
+    // 即使有类型错误也继续构建
+    ignoreBuildErrors: true,
+  },
+};
+
+export default nextConfig;
+```
+
+#### 开发模式选项
+
+在开发环境中，提供了两种启动模式:
+
+1. **标准模式** (推荐用于稳定开发):
+   ```bash
+   npm run dev
+   # 或
+   pnpm run dev
+   ```
+
+2. **Turbopack 模式** (实验性，提供更快的热重载):
+   ```bash
+   npm run dev:turbo
+   # 或
+   pnpm run dev:turbo
+   ```
 
 ## 故障排除
 
-### 1. 容器无法启动
+### 无法启动容器
 
-检查容器日志：
+如果容器无法启动，请检查日志:
 
 ```bash
 docker-compose logs -f
 ```
 
-常见问题解决方案：
-- 端口冲突：检查 3000 端口是否被占用
-- 权限问题：确保 data 目录有正确的读写权限
-- 环境变量：检查 .env 文件是否存在且正确
+### 权限问题
 
-### 2. Nginx 无法代理请求
-
-检查 Nginx 错误日志：
+如果遇到权限问题，确保 `data` 目录有正确的权限:
 
 ```bash
-sudo tail -f /var/log/nginx/error.log
+chmod 777 data
 ```
 
-如果看到"Connection refused"错误，确保 Docker 容器正在运行。
+### Nginx 配置问题
 
-### 3. 内存不足
+如果 Nginx 代理不工作，检查配置:
 
-如果服务器内存较小，可以在 docker-compose.yml 中添加内存限制：
-
-```yaml
-services:
-  app:
-    # ... 其他配置 ...
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+```bash
+sudo nginx -t
+sudo systemctl restart nginx
 ```
 
 ---
