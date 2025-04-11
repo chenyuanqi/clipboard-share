@@ -3,8 +3,14 @@
  * 用于与服务器进行密码存储、验证等操作
  */
 
+// 定义缓存内容的类型
+interface CacheItem {
+  value: unknown;
+  expires: number;
+}
+
 // 添加缓存来减少重复请求
-const apiCache = new Map<string, any>();
+const apiCache = new Map<string, CacheItem>();
 const cacheTTL = 60000; // 缓存有效期1分钟
 
 /**
@@ -189,7 +195,7 @@ export async function deletePasswordFromServer(id: string): Promise<boolean> {
  * @param id 剪贴板ID
  * @returns 剪贴板数据或null
  */
-export async function getClipboardFromServer(id: string): Promise<any> {
+export async function getClipboardFromServer(id: string): Promise<Record<string, unknown> | null> {
   try {
     // 检查缓存
     const cacheKey = `clipboard-${id}`;
@@ -344,8 +350,10 @@ export async function deleteClipboardFromServer(id: string): Promise<boolean> {
   }
 }
 
-// 辅助函数：从缓存中获取
-function getFromCache(key: string): any {
+/**
+ * 从缓存获取数据
+ */
+function getFromCache(key: string): unknown | undefined {
   const item = apiCache.get(key);
   if (!item) return undefined;
   
@@ -358,8 +366,10 @@ function getFromCache(key: string): any {
   return item.value;
 }
 
-// 辅助函数：保存到缓存
-function saveToCache(key: string, value: any): void {
+/**
+ * 保存数据到缓存
+ */
+function saveToCache(key: string, value: unknown): void {
   apiCache.set(key, {
     value,
     expires: Date.now() + cacheTTL

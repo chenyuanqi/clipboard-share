@@ -11,8 +11,8 @@ import {
   formatExpirationTime,
   calculateExpirationTime,
   formatChinaTime,
-  formatShortChinaTime,
-  isExpired
+  isExpired,
+  generateUniqueId
 } from "@/utils/helpers";
 import { 
   getClipboard, 
@@ -53,6 +53,16 @@ const SESSION_AUTHORIZED_KEY = 'clipboard-session-auth';
 // 定义会话存储中的授权数据类型
 interface AuthData {
   [key: string]: string;
+}
+
+// 定义剪贴板数据的类型
+interface ClipboardData {
+  content: string;
+  isProtected: boolean;
+  createdAt: number;
+  expiresAt: number;
+  lastModified: number;
+  [key: string]: any; // 允许其他属性
 }
 
 export default function ClipboardPage() {
@@ -246,7 +256,7 @@ export default function ClipboardPage() {
         
         // 尝试从服务器获取数据
         console.log("尝试从服务器获取剪贴板数据");
-        const serverClipboard = await getClipboardFromServer(id.toString());
+        const serverClipboard = await getClipboardFromServer(id.toString()) as ClipboardData | null;
         
         // 确定使用哪个剪贴板数据
         let clipboardToUse = null;
@@ -1239,8 +1249,8 @@ export default function ClipboardPage() {
   };
   
   // 创建一个防抖函数的帮助函数
-  const useDebounce = (value: any, delay: number) => {
-    const [debouncedValue, setDebouncedValue] = useState(value);
+  const useDebounce = <T,>(value: T, delay: number) => {
+    const [debouncedValue, setDebouncedValue] = useState<T>(value);
     
     useEffect(() => {
       const handler = setTimeout(() => {
@@ -1263,7 +1273,7 @@ export default function ClipboardPage() {
     setPassword(e.target.value);
     if (errorMessage) setErrorMessage(null);
   }, [errorMessage]);
-  
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">

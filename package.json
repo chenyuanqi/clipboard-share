@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "DISABLE_ESLINT_PLUGIN=true next build",
+    "dev": "next dev",
+    "dev:turbo": "next dev --turbopack",
+    "build": "next build",
+    "build:ignore-lint": "DISABLE_ESLINT_PLUGIN=true next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint --fix",
+    "lint:strict": "next lint"
   },
   "dependencies": {
     "crypto-js": "^4.2.0",

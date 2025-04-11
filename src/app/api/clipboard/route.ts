@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { formatChinaTime, formatShortChinaTime } from '@/utils/helpers';
+import { formatChinaTime } from '@/utils/helpers';
 
 // 存储剪贴板内容的文件路径
 const DATA_DIR = path.join(process.cwd(), 'data');

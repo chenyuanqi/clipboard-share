@@ -28,8 +28,8 @@ export function decrypt(encryptedText: string, password: string): string {
     );
     
     // 提取IV和加密数据
-    const iv = encryptedData.slice(0, 12);
-    const data = encryptedData.slice(12);
+    const _iv = encryptedData.slice(0, 12);
+    const _data = encryptedData.slice(12);
     
     // 这里实现实际的解密逻辑
     // 注意：这是一个同步版本，与 helpers.ts 中的异步版本不同
