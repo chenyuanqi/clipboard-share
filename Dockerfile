@@ -10,10 +10,7 @@ ENV DISABLE_ESLINT_PLUGIN=true
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # 配置 npm 使用淘宝镜像
-RUN npm config set registry https://registry.npmmirror.com && \
-    npm config set disturl https://npmmirror.com/dist && \
-    npm config set sharp_binary_host https://npmmirror.com/mirrors/sharp && \
-    npm config set sharp_libvips_binary_host https://npmmirror.com/mirrors/sharp-libvips
+RUN npm config set registry https://registry.npmmirror.com
 
 # 安装 pnpm
 RUN npm install -g pnpm
