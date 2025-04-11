@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { generateUniqueId } from "@/utils/helpers";
-import { getClipboard, saveClipboardPassword } from "@/utils/storage";
+import { getClipboard, saveClipboardPassword, addToHistory } from "@/utils/storage";
 import { savePasswordToServer } from "@/utils/api";
 import Dialog from "@/components/Dialog";
 
@@ -75,6 +75,9 @@ export default function Home() {
         // 本地也保存密码
         saveClipboardPassword(path, password);
         
+        // 添加到历史记录
+        addToHistory(path, "", true, Date.now(), Date.now() + parseInt(expiration, 10) * 60 * 60 * 1000);
+        
         // 创建但需要验证密码才能访问
         const url = `/clipboard/${path}?new=true&protected=true&exp=${expiration}`;
         console.log(`【详细日志】准备跳转到受保护的剪贴板页面:`);
@@ -87,6 +90,10 @@ export default function Home() {
         router.push(url);
       } else {
         console.log(`准备创建无密码保护的剪贴板：路径=${path}`);
+        
+        // 添加到历史记录
+        addToHistory(path, "", false, Date.now(), Date.now() + parseInt(expiration, 10) * 60 * 60 * 1000);
+        
         // 无密码剪贴板，直接进入并编辑
         const url = `/clipboard/${path}?new=true&exp=${expiration}&direct=true`;
         console.log(`【详细日志】准备跳转到无保护的剪贴板页面:`);
@@ -146,12 +153,21 @@ export default function Home() {
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
             云剪
           </h1>
-          <nav className="hidden sm:flex space-x-4">
+          <nav className="flex items-center space-x-4">
             <Link href="/" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition">
               首页
             </Link>
             <Link href="/about" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition">
               关于
+            </Link>
+            <Link 
+              href="/history" 
+              className="ml-1 w-9 h-9 flex items-center justify-center text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              title="浏览历史"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
             </Link>
           </nav>
         </div>

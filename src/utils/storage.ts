@@ -10,9 +10,21 @@ export interface ClipboardData {
   lastModified: number;
 }
 
+// 历史记录相关
+export interface ClipboardHistoryItem {
+  id: string;
+  title: string; // 显示的标题（取内容前部分）
+  content: string; // 内容摘要
+  isProtected: boolean; // 是否有密码保护
+  visitedAt: number; // 最后访问时间
+  createdAt: number; // 创建时间
+  expiresAt: number; // 过期时间
+}
+
 // 本地存储键
 const CLIPBOARD_STORAGE_KEY = 'clipboard-share-data';
 const CLIPBOARD_PASSWORDS_KEY = 'clipboard-share-passwords';
+const CLIPBOARD_HISTORY_KEY = 'clipboard-share-history';
 
 /**
  * 获取所有剪贴板数据
@@ -356,6 +368,135 @@ export function removeClipboardPassword(id: string): void {
   if (passwords[id]) {
     delete passwords[id];
     saveAllPasswords(passwords);
+  }
+}
+
+// 历史记录相关
+
+/**
+ * 添加剪贴板访问历史记录
+ * @param id 剪贴板ID
+ * @param content 内容
+ * @param isProtected 是否受密码保护
+ * @param createdAt 创建时间
+ * @param expiresAt 过期时间
+ */
+export function addToHistory(
+  id: string,
+  content: string,
+  isProtected: boolean = false,
+  createdAt: number = Date.now(),
+  expiresAt: number = Date.now() + 24 * 60 * 60 * 1000
+): void {
+  try {
+    // 获取现有历史记录
+    const history = getClipboardHistory();
+    
+    // 生成标题（使用内容前 30 个字符，去除换行）
+    let title = content.trim().replace(/\n/g, ' ').substring(0, 30);
+    if (title.length === 0) {
+      title = `剪贴板 ${id}`;
+    } else if (content.length > 30) {
+      title += '...';
+    }
+    
+    // 生成摘要内容（使用内容前 100 个字符）
+    let summary = content.trim().substring(0, 100);
+    if (content.length > 100) {
+      summary += '...';
+    }
+    
+    // 更新或添加历史记录
+    const now = Date.now();
+    const existingIndex = history.findIndex(item => item.id === id);
+    
+    const historyItem: ClipboardHistoryItem = {
+      id,
+      title,
+      content: summary,
+      isProtected,
+      visitedAt: now,
+      createdAt,
+      expiresAt
+    };
+    
+    if (existingIndex !== -1) {
+      // 更新现有记录的访问时间和内容
+      history[existingIndex] = historyItem;
+    } else {
+      // 添加新记录
+      history.unshift(historyItem);
+      
+      // 如果历史记录超过50条，删除最旧的
+      if (history.length > 50) {
+        history.pop();
+      }
+    }
+    
+    // 保存更新后的历史记录
+    localStorage.setItem(CLIPBOARD_HISTORY_KEY, JSON.stringify(history));
+    console.log(`添加/更新剪贴板历史记录: ID=${id}`);
+  } catch (error) {
+    console.error('添加剪贴板历史记录失败:', error);
+  }
+}
+
+/**
+ * 获取所有剪贴板历史记录，按访问时间倒序排列
+ * @returns 历史记录列表
+ */
+export function getClipboardHistory(): ClipboardHistoryItem[] {
+  try {
+    const data = localStorage.getItem(CLIPBOARD_HISTORY_KEY);
+    if (!data) return [];
+    
+    const history = JSON.parse(data) as ClipboardHistoryItem[];
+    
+    // 清理已过期的记录
+    const now = Date.now();
+    const validHistory = history.filter(item => item.expiresAt > now);
+    
+    // 如果有过期记录被过滤掉，重新保存历史记录
+    if (validHistory.length < history.length) {
+      localStorage.setItem(CLIPBOARD_HISTORY_KEY, JSON.stringify(validHistory));
+      console.log(`清理了 ${history.length - validHistory.length} 条过期的历史记录`);
+    }
+    
+    // 按访问时间倒序排序
+    return validHistory.sort((a, b) => b.visitedAt - a.visitedAt);
+  } catch (error) {
+    console.error('获取剪贴板历史记录失败:', error);
+    return [];
+  }
+}
+
+/**
+ * 清空所有历史记录
+ */
+export function clearClipboardHistory(): void {
+  try {
+    localStorage.removeItem(CLIPBOARD_HISTORY_KEY);
+    console.log('清空剪贴板历史记录成功');
+  } catch (error) {
+    console.error('清空剪贴板历史记录失败:', error);
+  }
+}
+
+/**
+ * 从历史记录中删除特定ID
+ * @param id 要删除的剪贴板ID
+ */
+export function removeFromHistory(id: string): void {
+  try {
+    const history = getClipboardHistory();
+    const filteredHistory = history.filter(item => item.id !== id);
+    
+    if (filteredHistory.length < history.length) {
+      localStorage.setItem(CLIPBOARD_HISTORY_KEY, JSON.stringify(filteredHistory));
+      console.log(`从历史记录中删除 ID=${id} 成功`);
+    }
+  } catch (error) {
+    console.error('从历史记录中删除项目失败:', error);
   }
 }
 

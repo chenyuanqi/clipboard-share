@@ -19,7 +19,8 @@ import {
   updateClipboardContent, 
   createClipboard,
   getClipboardPassword,
-  saveClipboardPassword
+  saveClipboardPassword,
+  addToHistory
 } from "@/utils/storage";
 import { decrypt } from '@/utils/crypto';
 import { PrimaryButton } from '@/components/buttons';
@@ -456,6 +457,15 @@ export default function ClipboardPage() {
                         // 记录解密后的初始内容，避免初始渲染时触发保存
                         lastSavedContent.current = decrypted;
                         setEditMode(false); // 默认显示查看模式
+                        
+                        // 添加到历史记录
+                        addToHistory(
+                          id.toString(),
+                          decrypted,
+                          true, // 有密码加密的内容肯定是受保护的
+                          clipboardToUse?.createdAt || Date.now(),
+                          clipboardToUse?.expiresAt || (Date.now() + expirationHours * 3600 * 1000)
+                        );
                       } catch (decryptError) {
                         console.error("内容解密失败:", decryptError);
                         
@@ -475,6 +485,15 @@ export default function ClipboardPage() {
                       setContent(clipboardToUse.content);
                       lastSavedContent.current = clipboardToUse.content;
                       setEditMode(false); // 默认查看模式
+                      
+                      // 添加到历史记录
+                      addToHistory(
+                        id.toString(),
+                        clipboardToUse.content,
+                        clipboardToUse.isProtected,
+                        clipboardToUse.createdAt,
+                        clipboardToUse.expiresAt
+                      );
                     }
                   } catch (error) {
                     console.error("内容解密失败:", error);
@@ -533,6 +552,15 @@ export default function ClipboardPage() {
           setIsAuthorized(true);
           // 设置为查看模式，确保内容显示在查看区域
           setEditMode(false);
+          
+          // 添加到历史记录
+          addToHistory(
+            id.toString(),
+            clipboardToUse.content,
+            clipboardToUse.isProtected,
+            clipboardToUse.createdAt,
+            clipboardToUse.expiresAt
+          );
         }
         
         setIsLoading(false);
@@ -1081,6 +1109,15 @@ export default function ClipboardPage() {
               const decrypted = await decryptText(encryptedContent, password);
               setContent(decrypted);
               setEditMode(false); // 默认显示查看模式
+              
+              // 添加到历史记录
+              addToHistory(
+                id.toString(),
+                decrypted,
+                true, // 有密码加密的内容肯定是受保护的
+                clipboardToUse?.createdAt || Date.now(),
+                clipboardToUse?.expiresAt || (Date.now() + expirationHours * 3600 * 1000)
+              );
             } catch (decryptError) {
               console.error("内容解密失败:", decryptError);
               
@@ -1152,6 +1189,9 @@ export default function ClipboardPage() {
         url.searchParams.delete('protected');
         window.history.replaceState({}, '', url.toString());
       }
+
+      // 在授权成功后添加到历史记录
+      recordToHistory(clipboardToUse);
     } catch (error) {
       console.error("密码验证过程出错:", error);
       setErrorMessage("验证过程发生错误，请重试");
@@ -1273,6 +1313,19 @@ export default function ClipboardPage() {
     setPassword(e.target.value);
     if (errorMessage) setErrorMessage(null);
   }, [errorMessage]);
+
+  // 在授权成功后添加到历史记录
+  const recordToHistory = (clipboardData: any) => {
+    if (clipboardData && clipboardData.content !== undefined) {
+      addToHistory(
+        id as string,
+        clipboardData.content,
+        clipboardData.isProtected,
+        clipboardData.createdAt,
+        clipboardData.expiresAt
+      );
+    }
+  };
 
   if (isLoading) {
     return (

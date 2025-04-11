@@ -8,12 +8,21 @@ export default function AboutPage() {
           <Link href="/" className="text-2xl font-bold text-gray-800 dark:text-white">
             云剪
           </Link>
-          <nav className="hidden sm:flex space-x-4">
+          <nav className="flex items-center space-x-4">
             <Link href="/" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition">
               首页
             </Link>
             <Link href="/about" className="text-blue-600 dark:text-blue-400 font-medium">
               关于
+            </Link>
+            <Link 
+              href="/history" 
+              className="ml-1 w-9 h-9 flex items-center justify-center text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              title="浏览历史"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
             </Link>
           </nav>
         </div>
