@@ -18,8 +18,8 @@ RUN npm install -g pnpm
 # 复制 package.json 和 pnpm-lock.yaml
 COPY package*.json pnpm*.yaml ./
 
-# 使用 pnpm 安装依赖
-RUN pnpm install --frozen-lockfile --prod
+# 使用 pnpm 安装依赖（包括开发依赖）
+RUN pnpm install --frozen-lockfile
 
 # 创建data目录
 RUN mkdir -p /app/data && chmod 777 /app/data
