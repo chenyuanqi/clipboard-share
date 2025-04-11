@@ -9,11 +9,20 @@ ENV NODE_ENV=production
 ENV DISABLE_ESLINT_PLUGIN=true
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# 复制 package.json 和 package-lock.json
-COPY package*.json ./
+# 配置 npm 使用淘宝镜像
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm config set disturl https://npmmirror.com/dist && \
+    npm config set sharp_binary_host https://npmmirror.com/mirrors/sharp && \
+    npm config set sharp_libvips_binary_host https://npmmirror.com/mirrors/sharp-libvips
 
-# 安装依赖
-RUN npm install
+# 安装 pnpm
+RUN npm install -g pnpm
+
+# 复制 package.json 和 pnpm-lock.yaml
+COPY package*.json pnpm*.yaml ./
+
+# 使用 pnpm 安装依赖
+RUN pnpm install --frozen-lockfile --prod
 
 # 创建data目录
 RUN mkdir -p /app/data && chmod 777 /app/data
@@ -24,8 +33,8 @@ COPY . .
 # 确保目录权限正确
 RUN chown -R node:node /app
 
-# 构建应用
-RUN npm run build
+# 使用 pnpm 构建应用
+RUN pnpm run build
 
 # 暴露端口
 EXPOSE 3000
@@ -34,4 +43,4 @@ EXPOSE 3000
 USER node
 
 # 启动命令
-CMD ["npm", "start"] 
+CMD ["pnpm", "start"] 
