@@ -158,13 +158,55 @@ export default function Home() {
       </header>
 
       <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8">
-        <div className="max-w-md w-full mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8">
+        {/* 介绍特点部分 - 移到最前面 */}
+        <div className="w-full max-w-4xl mx-auto mb-10">
+          <h2 className="text-3xl font-bold text-center text-gray-800 dark:text-white mb-8">
+            安全、简单的文本共享方式
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg transition-transform hover:scale-105">
+              <div className="flex items-center mb-4">
+                <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-900 mr-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600 dark:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <h4 className="font-medium text-lg text-gray-800 dark:text-white">密码保护</h4>
+              </div>
+              <p className="text-gray-600 dark:text-gray-300">使用密码加密您的内容，仅分享给信任的人，保障您的隐私安全</p>
+            </div>
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg transition-transform hover:scale-105">
+              <div className="flex items-center mb-4">
+                <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-900 mr-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600 dark:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h4 className="font-medium text-lg text-gray-800 dark:text-white">临时链接</h4>
+              </div>
+              <p className="text-gray-600 dark:text-gray-300">所有内容在到期后自动删除，不留痕迹，保护您的数据安全</p>
+            </div>
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg transition-transform hover:scale-105">
+              <div className="flex items-center mb-4">
+                <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-900 mr-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600 dark:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <h4 className="font-medium text-lg text-gray-800 dark:text-white">多设备支持</h4>
+              </div>
+              <p className="text-gray-600 dark:text-gray-300">无论电脑还是手机，都能轻松访问和编辑您的内容</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-md w-full mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8 transform transition-all hover:shadow-xl">
           <h2 className="text-2xl sm:text-3xl font-bold text-center text-gray-800 dark:text-white mb-6">
             创建新的剪贴板
           </h2>
           
-          <div className="space-y-4">
-            <div>
+          <div className="space-y-5">
+            <div className="transition-all duration-200 hover:translate-x-1">
               <label htmlFor="customPath" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 自定义路径（可选）
               </label>
@@ -174,7 +216,7 @@ export default function Home() {
                 value={customPath}
                 onChange={handlePathChange}
                 placeholder="例如：my-notes"
-                className={`w-full px-4 py-2 border ${pathError ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white`}
+                className={`w-full px-4 py-3 border ${pathError ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white transition-colors`}
               />
               {pathError ? (
                 <p className="mt-1 text-xs text-red-500">
@@ -187,7 +229,7 @@ export default function Home() {
               )}
             </div>
 
-            <div>
+            <div className="transition-all duration-200 hover:translate-x-1">
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 密码保护（可选）
               </label>
@@ -197,14 +239,14 @@ export default function Home() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="设置访问密码"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white transition-colors"
               />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 为保障安全，密码仅会保存在您的设备上
               </p>
             </div>
 
-            <div>
+            <div className="transition-all duration-200 hover:translate-x-1">
               <label htmlFor="expiration" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 有效期
               </label>
@@ -212,7 +254,7 @@ export default function Home() {
                 id="expiration"
                 value={expiration}
                 onChange={(e) => setExpiration(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white transition-colors"
               >
                 <option value="1">1小时</option>
                 <option value="12">12小时</option>
@@ -224,7 +266,7 @@ export default function Home() {
             <button
               onClick={handleCreateClipboard}
               disabled={isCreating || isDialogOpen}
-              className={`w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:transform active:scale-95 text-white font-medium rounded-lg transition-all duration-150 flex items-center justify-center ${(isCreating || isDialogOpen) ? 'opacity-70 cursor-not-allowed' : ''}`}
+              className={`w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:transform active:scale-95 text-white font-medium rounded-lg transition-all duration-300 flex items-center justify-center shadow-md hover:shadow-lg ${(isCreating || isDialogOpen) ? 'opacity-70 cursor-not-allowed' : ''}`}
             >
               {isCreating ? (
                 <>
@@ -241,25 +283,66 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="mt-10 max-w-2xl text-center">
-          <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
-            安全、简单的文本共享方式
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
-            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-              <h4 className="font-medium text-lg mb-2 text-gray-800 dark:text-white">密码保护</h4>
-              <p className="text-gray-600 dark:text-gray-300">使用密码加密您的内容，仅分享给信任的人</p>
-            </div>
-            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-              <h4 className="font-medium text-lg mb-2 text-gray-800 dark:text-white">临时链接</h4>
-              <p className="text-gray-600 dark:text-gray-300">所有内容在到期后自动删除，保护您的隐私</p>
-            </div>
-            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-              <h4 className="font-medium text-lg mb-2 text-gray-800 dark:text-white">多设备支持</h4>
-              <p className="text-gray-600 dark:text-gray-300">无论电脑还是手机，都能轻松访问和编辑</p>
+        {/* 使用步骤说明 */}
+        <div className="mt-16 mb-8 max-w-3xl mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+          <div className="p-6">
+            <h3 className="text-2xl font-bold text-center text-gray-800 dark:text-white mb-6">
+              如何使用云剪？
+            </h3>
+            <div className="space-y-6">
+              <div className="flex items-start">
+                <div className="flex-shrink-0 bg-blue-100 dark:bg-blue-900 rounded-full p-3 mr-4">
+                  <span className="text-xl font-bold text-blue-600 dark:text-blue-300">1</span>
+                </div>
+                <div>
+                  <h4 className="text-lg font-medium text-gray-800 dark:text-white mb-1">创建剪贴板</h4>
+                  <p className="text-gray-600 dark:text-gray-300">在首页填写表单创建新的剪贴板，可以选择设置自定义路径、访问密码和有效期。</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start">
+                <div className="flex-shrink-0 bg-blue-100 dark:bg-blue-900 rounded-full p-3 mr-4">
+                  <span className="text-xl font-bold text-blue-600 dark:text-blue-300">2</span>
+                </div>
+                <div>
+                  <h4 className="text-lg font-medium text-gray-800 dark:text-white mb-1">编辑和保存内容</h4>
+                  <p className="text-gray-600 dark:text-gray-300">在剪贴板页面输入或粘贴您想要分享的文本内容，系统会自动保存您的编辑。</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start">
+                <div className="flex-shrink-0 bg-blue-100 dark:bg-blue-900 rounded-full p-3 mr-4">
+                  <span className="text-xl font-bold text-blue-600 dark:text-blue-300">3</span>
+                </div>
+                <div>
+                  <h4 className="text-lg font-medium text-gray-800 dark:text-white mb-1">分享链接</h4>
+                  <p className="text-gray-600 dark:text-gray-300">点击复制链接按钮获取分享URL，或使用二维码功能让移动设备用户轻松访问。</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start">
+                <div className="flex-shrink-0 bg-blue-100 dark:bg-blue-900 rounded-full p-3 mr-4">
+                  <span className="text-xl font-bold text-blue-600 dark:text-blue-300">4</span>
+                </div>
+                <div>
+                  <h4 className="text-lg font-medium text-gray-800 dark:text-white mb-1">跨设备访问</h4>
+                  <p className="text-gray-600 dark:text-gray-300">在任何设备上通过相同的链接访问剪贴板，如设置了密码，需要输入正确的密码才能查看和编辑内容。</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start">
+                <div className="flex-shrink-0 bg-blue-100 dark:bg-blue-900 rounded-full p-3 mr-4">
+                  <span className="text-xl font-bold text-blue-600 dark:text-blue-300">5</span>
+                </div>
+                <div>
+                  <h4 className="text-lg font-medium text-gray-800 dark:text-white mb-1">内容自动过期</h4>
+                  <p className="text-gray-600 dark:text-gray-300">所有内容将在您设置的时间后自动过期删除，无需手动清理，保护您的隐私安全。</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+
       </main>
 
       <footer className="p-4 sm:p-6 border-t border-gray-200 dark:border-gray-800 text-center text-gray-600 dark:text-gray-400">
