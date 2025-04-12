@@ -259,17 +259,32 @@ export default function ClipboardPage() {
         console.log("尝试从服务器获取剪贴板数据");
         const serverClipboard = await getClipboardFromServer(id.toString()) as ClipboardData | null;
         
+        // 添加更多备份恢复选项
+        let backupContent = null;
+        try {
+          const clipboardKey = `clipboard-content-${id}`;
+          backupContent = localStorage.getItem(clipboardKey);
+          if (backupContent) {
+            console.log("从备份中找到剪贴板内容");
+          }
+        } catch (error) {
+          console.error("检查备份内容失败:", error);
+        }
+
         // 确定使用哪个剪贴板数据
         let clipboardToUse = null;
         let isFromServer = false;
+        let contentSource = "";
         
-        if (serverClipboard) {
+        // 决策逻辑：优先选择最新的数据源
+        if (serverClipboard && serverClipboard.content) {
           console.log("从服务器成功获取剪贴板数据");
           
           // 如果本地没有剪贴板数据，或者服务器数据更新，使用服务器的数据
           if (!localClipboard || serverClipboard.lastModified > localClipboard.lastModified) {
             console.log("使用服务器的剪贴板数据");
             isFromServer = true;
+            contentSource = "server";
             
             // 检查服务器数据的保护状态
             console.log(`【详细日志】从服务器获取的剪贴板数据:`);
@@ -306,20 +321,57 @@ export default function ClipboardPage() {
         } else if (localClipboard) {
           console.log("服务器上无数据，使用本地数据");
           clipboardToUse = localClipboard;
+          contentSource = "local";
         } else {
           // 尝试从备份恢复
           console.log("尝试从备份恢复剪贴板数据");
-          try {
-            const clipboardKey = `clipboard-content-${id}`;
-            const backupContent = localStorage.getItem(clipboardKey);
-            
-            if (backupContent) {
-              console.log("从备份中找到剪贴板内容");
-              // 创建新的剪贴板对象
-              clipboardToUse = createClipboard(id.toString(), backupContent, isProtected, 24); // 默认24小时
+          
+          // 定义可能的备份位置列表
+          const backupSources = [
+            { key: `clipboard-content-${id}`, name: "常规备份" },
+            { key: `clipboard-content-backup-${id}`, name: "自动保存备份" },
+            { key: `clipboard-${id}`, name: "对象备份", isObject: true },
+          ];
+          
+          // 尝试所有备份位置
+          for (const source of backupSources) {
+            try {
+              let recoveredContent = null;
+              
+              if (source.isObject) {
+                // 对于对象类型的备份
+                const objData = localStorage.getItem(source.key);
+                if (objData) {
+                  try {
+                    const parsed = JSON.parse(objData);
+                    if (parsed && parsed.content) {
+                      recoveredContent = parsed.content;
+                    }
+                  } catch (parseError) {
+                    console.error(`从${source.name}解析对象失败:`, parseError);
+                  }
+                }
+              } else {
+                // 字符串类型的备份
+                recoveredContent = localStorage.getItem(source.key);
+              }
+              
+              if (recoveredContent) {
+                console.log(`从${source.name}中找到剪贴板内容`);
+                // 创建新的剪贴板对象
+                clipboardToUse = createClipboard(id.toString(), recoveredContent, isProtected, 24); // 默认24小时
+                contentSource = source.name;
+                break; // 成功恢复，退出循环
+              }
+            } catch (error) {
+              console.error(`从${source.name}恢复失败:`, error);
             }
-          } catch (error) {
-            console.error("从备份恢复失败:", error);
+          }
+          
+          if (backupContent && !clipboardToUse) {
+            console.log("使用最简单的备份内容");
+            clipboardToUse = createClipboard(id.toString(), backupContent, isProtected, 24); // 默认24小时
+            contentSource = "simple_backup";
           }
         }
         
@@ -470,14 +522,26 @@ export default function ClipboardPage() {
                         console.error("内容解密失败:", decryptError);
                         
                         // 解密失败但验证成功，说明可能是格式问题或API不可用
-                        // 仍然允许用户访问，但显示未解密内容或空内容
-                        setContent(""); // 设置为空内容，让用户重新输入
-                        // 记录空内容为初始内容
-                        lastSavedContent.current = "";
-                        setEditMode(true); // 直接进入编辑模式
+                        // 尝试保留原始加密内容，允许用户查看或编辑
+                        const originalContent = clipboardToUse.content;
+                        const isSimpleFormat = originalContent.startsWith('SIMPLE:');
+                        const isCryptoFormat = originalContent.startsWith('CRYPTO:');
                         
-                        // 显示轻微的提示
-                        console.log("由于解密问题，已切换到编辑模式 - 可能需要重新输入内容");
+                        if (originalContent && (isSimpleFormat || isCryptoFormat)) {
+                          // 如果是明确的加密格式但解密失败，保留加密内容并提供明确提示
+                          setContent(`解密失败，但您可以重新输入内容。\n原始加密内容已保留。\n格式: ${isSimpleFormat ? 'SIMPLE' : 'CRYPTO'}`);
+                          lastSavedContent.current = originalContent; // 保留原始加密内容，避免自动保存覆盖
+                          // 设置编辑模式便于用户重新输入
+                          setEditMode(true);
+                        } else {
+                          // 如果无法解析加密格式，使用空内容
+                          setContent("");
+                          lastSavedContent.current = "";
+                          setEditMode(true); // 直接进入编辑模式
+                        }
+                        
+                        // 使用警告提示而不是错误消息
+                        console.log("由于解密问题，已切换到编辑模式 - 您可以重新输入内容");
                       }
                     } else {
                       // 内容不是加密的，直接显示
@@ -567,6 +631,60 @@ export default function ClipboardPage() {
         return true;
       } catch (error) {
         console.error("加载剪贴板失败:", error);
+        
+        // 尝试从所有可能的备份恢复一次
+        try {
+          console.log("发生错误，尝试最后一次从备份恢复...");
+          let recoveredContent = null;
+          let recoverySource = "";
+          
+          // 检查所有可能的备份
+          const backupKeys = [
+            `clipboard-content-${id}`,
+            `clipboard-content-backup-${id}`,
+            `clipboard-${id}`
+          ];
+          
+          for (const key of backupKeys) {
+            try {
+              const data = localStorage.getItem(key);
+              if (data) {
+                if (key === `clipboard-${id}`) {
+                  try {
+                    const parsed = JSON.parse(data);
+                    if (parsed && parsed.content) {
+                      recoveredContent = parsed.content;
+                      recoverySource = "对象备份";
+                      break;
+                    }
+                  } catch (e) { /* 继续尝试其他备份 */ }
+                } else {
+                  recoveredContent = data;
+                  recoverySource = key;
+                  break;
+                }
+              }
+            } catch (e) { /* 继续尝试其他备份 */ }
+          }
+          
+          if (recoveredContent) {
+            console.log(`紧急恢复成功，来源: ${recoverySource}`);
+            setContent(recoveredContent);
+            lastSavedContent.current = recoveredContent;
+            setIsAuthorized(true);
+            setEditMode(true);
+            setIsLoading(false);
+            
+            // 显示恢复提示
+            setSaveStatus("已从备份恢复内容");
+            setTimeout(() => setSaveStatus("请检查内容并手动保存"), 3000);
+            
+            return true;
+          }
+        } catch (recoveryError) {
+          console.error("紧急恢复尝试失败:", recoveryError);
+        }
+        
         setIsLoading(false);
         router.push("/not-found");
         return false;
@@ -620,6 +738,47 @@ export default function ClipboardPage() {
             return;
           }
           
+          // 检查是否有备份内容可以恢复
+          let hasBackupContent = false;
+          let backupContent = "";
+          
+          try {
+            // 检查可能的备份位置
+            const backupKeys = [
+              `clipboard-content-${id}`,
+              `clipboard-content-backup-${id}`,
+              `clipboard-${id}`
+            ];
+            
+            for (const key of backupKeys) {
+              const data = localStorage.getItem(key);
+              if (data) {
+                if (key === `clipboard-${id}`) {
+                  // 对象格式备份
+                  try {
+                    const parsed = JSON.parse(data);
+                    if (parsed && parsed.content) {
+                      backupContent = parsed.content;
+                      hasBackupContent = true;
+                      console.log(`找到对象格式的备份内容，长度: ${backupContent.length}`);
+                      break;
+                    }
+                  } catch (e) {
+                    console.error("解析对象备份失败:", e);
+                  }
+                } else {
+                  // 字符串格式备份
+                  backupContent = data;
+                  hasBackupContent = true;
+                  console.log(`找到字符串格式的备份内容，长度: ${backupContent.length}`);
+                  break;
+                }
+              }
+            }
+          } catch (error) {
+            console.error("检查备份内容失败:", error);
+          }
+          
           // 从URL参数中获取密码
           const urlPassword = searchParams.get("password");
           const passwordToUse = urlPassword || password;
@@ -637,10 +796,12 @@ export default function ClipboardPage() {
           console.log(`【详细日志】- expirationHours = ${expirationHours}`);
           console.log(`【详细日志】- 创建时间 = ${new Date(createdAt).toLocaleString()}`);
           console.log(`【详细日志】- 过期时间 = ${new Date(expiresAt).toLocaleString()}`);
+          console.log(`【详细日志】- 是否有备份内容 = ${hasBackupContent}`);
           
           // 确保这里传递的isProtected与URL参数一致
           const protectedValue = searchParams.get("protected") === "true";
-          const newClipboard = createClipboard(id.toString(), "", protectedValue, expirationHours, createdAt);
+          const initialContent = hasBackupContent ? backupContent : "";
+          const newClipboard = createClipboard(id.toString(), initialContent, protectedValue, expirationHours, createdAt);
           
           console.log(`【详细日志】剪贴板创建结果:`);
           console.log(`【详细日志】- ID = ${newClipboard.id}`);
@@ -653,9 +814,23 @@ export default function ClipboardPage() {
           // 立即将新剪贴板保存到服务器
           try {
             console.log(`【详细日志】将新创建的剪贴板保存到服务器...`);
+            let initialServerContent = initialContent;
+            
+            // 如果有密码且有内容，加密后再保存到服务器
+            if (protectedValue && passwordToUse && initialContent) {
+              try {
+                initialServerContent = await encryptText(initialContent, passwordToUse);
+                console.log("初始内容已加密，准备保存到服务器");
+              } catch (encryptError) {
+                console.error("加密初始内容失败:", encryptError);
+                // 使用简单加密备用方案
+                initialServerContent = 'SIMPLE:' + btoa(initialContent);
+              }
+            }
+            
             const serverSaveSuccess = await saveClipboardToServer(
               id.toString(),
-              "", // 初始内容为空
+              initialServerContent, // 使用可能有的初始内容
               newClipboard.isProtected, 
               expirationHours
             );
@@ -703,10 +878,19 @@ export default function ClipboardPage() {
               // 如果是从首页创建并直接访问模式
               setIsAuthorized(true);
               setEditMode(true);
-              // 设置初始空内容，避免保存
-              setContent("");
-              lastSavedContent.current = "";
-              console.log("直接访问模式：自动授权");
+              
+              // 检查是否已经有内容，如果有则不清空
+              const existingClipboard = getClipboard(id.toString());
+              if (!existingClipboard || !existingClipboard.content) {
+                // 仅当没有现有内容时才设置空内容
+                setContent("");
+                lastSavedContent.current = "";
+              } else {
+                // 如果有现有内容，使用它
+                setContent(existingClipboard.content);
+                lastSavedContent.current = existingClipboard.content;
+              }
+              console.log("直接访问模式：自动授权" + (existingClipboard?.content ? "，使用现有内容" : "，使用空内容"));
             } else {
               // 普通访问模式，需要验证密码
               setIsAuthorized(false);
@@ -765,7 +949,18 @@ export default function ClipboardPage() {
     // 如果是初始渲染，不触发保存
     if (isInitialRender.current) {
       isInitialRender.current = false;
-      lastSavedContent.current = content;
+      // 确保初始内容被记录，避免丢失
+      if (content) {
+        lastSavedContent.current = content;
+        
+        // 额外的本地备份
+        try {
+          const clipboardKey = `clipboard-content-backup-${id}`;
+          localStorage.setItem(clipboardKey, content);
+        } catch (error) {
+          console.error("初始内容本地备份失败:", error);
+        }
+      }
       return;
     }
     
@@ -780,6 +975,14 @@ export default function ClipboardPage() {
     }
     
     setSaveStatus("正在保存...");
+    
+    // 立即进行本地备份
+    try {
+      const clipboardKey = `clipboard-content-backup-${id}`;
+      localStorage.setItem(clipboardKey, content);
+    } catch (backupError) {
+      console.error("自动保存备份失败:", backupError);
+    }
     
     saveTimeoutRef.current = setTimeout(async () => {
       try {
@@ -826,9 +1029,27 @@ export default function ClipboardPage() {
                 console.log("内容已加密，准备保存");
               } catch (encryptError) {
                 console.error("加密失败:", encryptError);
-                // 如果加密失败，使用原始内容（未加密）以确保数据不丢失
-                contentToSave = content;
-                console.log("由于加密失败，将保存未加密内容");
+                
+                // 如果加密失败，不要直接使用未加密内容（这可能会导致数据泄露）
+                // 而是尝试使用备用的简单加密方法
+                try {
+                  console.log("尝试使用备用简单加密方法");
+                  // 使用简单的加密格式
+                  contentToSave = 'SIMPLE:' + btoa(content);
+                  console.log("使用备用加密格式成功，准备保存");
+                } catch (fallbackEncryptError) {
+                  console.error("备用加密也失败:", fallbackEncryptError);
+                  
+                  // 最后的备用选项 - 显式提示用户并提供恢复选项
+                  contentToSave = content;
+                  console.log("由于加密失败，将保存未加密内容，但会在UI中提醒用户");
+                  
+                  // 在UI中显示警告
+                  setSaveStatus("加密失败，已保存未加密内容");
+                  setTimeout(() => {
+                    setSaveStatus("请考虑导出内容并重新创建剪贴板");
+                  }, 3000);
+                }
               }
               
               // 保存加密后的内容到服务器
@@ -1122,12 +1343,26 @@ export default function ClipboardPage() {
               console.error("内容解密失败:", decryptError);
               
               // 解密失败但验证成功，说明可能是格式问题或API不可用
-              // 仍然允许用户访问，但显示未解密内容或空内容
-              setContent(""); // 设置为空内容，让用户重新输入
-              setEditMode(true); // 直接进入编辑模式
+              // 尝试保留原始加密内容，允许用户查看或编辑
+              const originalContent = encryptedContent;
+              const isSimpleFormat = originalContent.startsWith('SIMPLE:');
+              const isCryptoFormat = originalContent.startsWith('CRYPTO:');
               
-              // 显示轻微的提示
-              console.log("由于解密问题，已切换到编辑模式 - 可能需要重新输入内容");
+              if (originalContent && (isSimpleFormat || isCryptoFormat)) {
+                // 如果是明确的加密格式但解密失败，保留加密内容并提供明确提示
+                setContent(`解密失败，但您可以重新输入内容。\n原始加密内容已保留。\n格式: ${isSimpleFormat ? 'SIMPLE' : 'CRYPTO'}`);
+                lastSavedContent.current = originalContent; // 保留原始加密内容，避免自动保存覆盖
+                // 设置编辑模式便于用户重新输入
+                setEditMode(true);
+              } else {
+                // 如果无法解析加密格式，使用空内容
+                setContent("");
+                lastSavedContent.current = "";
+                setEditMode(true); // 直接进入编辑模式
+              }
+              
+              // 使用警告提示而不是错误消息
+              console.log("由于解密问题，已切换到编辑模式 - 您可以重新输入内容");
             }
           } else {
             // 内容不是加密的，直接显示

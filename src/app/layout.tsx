@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "云剪 | 安全、简单的文本共享工具",
+  title: "云剪 | 安全简单的文本共享工具",
   description: "安全地分享文本信息，支持密码保护和临时链接，无需注册即可使用。",
   keywords: "云剪, 文本分享, 临时链接, 加密分享",
   authors: [{ name: "Clipboard Share Team" }],
