@@ -523,16 +523,32 @@ export default function ClipboardPage() {
                         
                         // 解密失败但验证成功，说明可能是格式问题或API不可用
                         // 尝试保留原始加密内容，允许用户查看或编辑
-                        const originalContent = clipboardToUse.content;
+                        const originalContent = encryptedContent;
                         const isSimpleFormat = originalContent.startsWith('SIMPLE:');
                         const isCryptoFormat = originalContent.startsWith('CRYPTO:');
                         
                         if (originalContent && (isSimpleFormat || isCryptoFormat)) {
                           // 如果是明确的加密格式但解密失败，保留加密内容并提供明确提示
-                          setContent(`解密失败，但您可以重新输入内容。\n原始加密内容已保留。\n格式: ${isSimpleFormat ? 'SIMPLE' : 'CRYPTO'}`);
+                          setContent(`解密过程遇到问题，这可能是由于：
+1. 内容在传输过程中损坏
+2. 使用了不同设备或浏览器加密和解密
+3. 浏览器不支持所需的解密功能
+
+您可以：
+- 在此处输入新内容（您的编辑不会覆盖原始加密内容）
+- 请内容创建者重新生成一个新的剪贴板分享
+
+技术信息：格式: ${isSimpleFormat ? 'SIMPLE' : 'CRYPTO'}`);
+                          
                           lastSavedContent.current = originalContent; // 保留原始加密内容，避免自动保存覆盖
                           // 设置编辑模式便于用户重新输入
                           setEditMode(true);
+                          
+                          // 显示保存状态提示
+                          setSaveStatus("解密失败，已切换到编辑模式");
+                          setTimeout(() => {
+                            setSaveStatus("您的编辑不会覆盖原始加密数据");
+                          }, 3000);
                         } else {
                           // 如果无法解析加密格式，使用空内容
                           setContent("");
@@ -1306,83 +1322,15 @@ export default function ClipboardPage() {
       }
       
       console.log("密码匹配成功");
-      setIsAuthorized(true);
-      
-      // 对已有内容进行解密（如果有）
-      if (encryptedContent) {
-        try {
-          console.log("尝试解密内容...");
-          // 添加更详细的日志以便调试
-          console.log(`解密前检查 - window类型: ${typeof window}`);
-          if (typeof window !== 'undefined') {
-            console.log(`解密前检查 - window.crypto可用: ${!!window.crypto}`);
-            console.log(`解密前检查 - window.crypto.subtle可用: ${!!window.crypto?.subtle}`);
-            console.log(`解密前检查 - isCryptoAvailable: ${isCryptoAvailable()}`);
-          }
-          
-          // 检查当前内容是否是加密的（是否以CRYPTO:或SIMPLE:开头）
-          const isEncryptedContent = 
-            encryptedContent.startsWith('CRYPTO:') || 
-            encryptedContent.startsWith('SIMPLE:');
-          
-          if (isEncryptedContent) {
-            try {
-              const decrypted = await decryptText(encryptedContent, password);
-              setContent(decrypted);
-              setEditMode(false); // 默认显示查看模式
-              
-              // 添加到历史记录
-              addToHistory(
-                id.toString(),
-                decrypted,
-                true, // 有密码加密的内容肯定是受保护的
-                clipboardToUse?.createdAt || Date.now(),
-                clipboardToUse?.expiresAt || (Date.now() + expirationHours * 3600 * 1000)
-              );
-            } catch (decryptError) {
-              console.error("内容解密失败:", decryptError);
-              
-              // 解密失败但验证成功，说明可能是格式问题或API不可用
-              // 尝试保留原始加密内容，允许用户查看或编辑
-              const originalContent = encryptedContent;
-              const isSimpleFormat = originalContent.startsWith('SIMPLE:');
-              const isCryptoFormat = originalContent.startsWith('CRYPTO:');
-              
-              if (originalContent && (isSimpleFormat || isCryptoFormat)) {
-                // 如果是明确的加密格式但解密失败，保留加密内容并提供明确提示
-                setContent(`解密失败，但您可以重新输入内容。\n原始加密内容已保留。\n格式: ${isSimpleFormat ? 'SIMPLE' : 'CRYPTO'}`);
-                lastSavedContent.current = originalContent; // 保留原始加密内容，避免自动保存覆盖
-                // 设置编辑模式便于用户重新输入
-                setEditMode(true);
-              } else {
-                // 如果无法解析加密格式，使用空内容
-                setContent("");
-                lastSavedContent.current = "";
-                setEditMode(true); // 直接进入编辑模式
-              }
-              
-              // 使用警告提示而不是错误消息
-              console.log("由于解密问题，已切换到编辑模式 - 您可以重新输入内容");
-            }
-          } else {
-            // 内容不是加密的，直接显示
-            console.log("内容未加密，直接显示");
-            setContent(encryptedContent);
-            setEditMode(false); // 默认查看模式
-          }
-        } catch (error) {
-          console.error("内容解密失败:", error);
-        }
-      }
-      
-      // 确保状态中保存正确的密码
-      if (!savedPassword) {
-        setSavedPassword(password);
-      }
       
       // 确保密码存储在标准位置
       if (!storedPassword) {
         saveClipboardPassword(id.toString(), password);
+      }
+      
+      // 确保状态中保存正确的密码
+      if (!savedPassword || savedPassword !== password) {
+        setSavedPassword(password);
       }
       
       // 将成功的密码保存到会话存储，这样下次不需要重新输入
@@ -1424,9 +1372,18 @@ export default function ClipboardPage() {
         url.searchParams.delete('protected');
         window.history.replaceState({}, '', url.toString());
       }
-
-      // 在授权成功后添加到历史记录
-      recordToHistory(clipboardToUse);
+      
+      // 临时解决方案：将页面设置为授权状态
+      setIsAuthorized(true);
+      
+      // 使用setTimeout确保状态更新后再刷新页面
+      setTimeout(() => {
+        console.log("临时解决方案：密码验证成功后自动刷新页面...");
+        if (typeof window !== 'undefined') {
+          window.location.reload();
+        }
+      }, 500);
+      
     } catch (error) {
       console.error("密码验证过程出错:", error);
       setErrorMessage("验证过程发生错误，请重试");

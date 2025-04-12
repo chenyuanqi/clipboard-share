@@ -184,6 +184,8 @@ export async function decryptText(encryptedText: string, password: string): Prom
       throw new Error('解密失败: 加密文本或密码为空');
     }
     
+    console.log(`开始解密过程，内容类型: ${encryptedText.substring(0, 8)}...`);
+    
     // 检查加密类型
     if (encryptedText.startsWith('SIMPLE:')) {
       console.log('检测到简单加密内容，使用简单解密方法');
@@ -191,21 +193,46 @@ export async function decryptText(encryptedText: string, password: string): Prom
     }
     
     // 如果是Web Crypto加密的内容但API不可用
-    if (encryptedText.startsWith('CRYPTO:') && !isCryptoAvailable()) {
-      console.error('解密失败: 内容需要Web Crypto API解密，但当前环境不支持');
-      throw new Error('解密失败: 当前浏览器不支持Web Crypto API');
-    }
-    
-    // 移除前缀（如果有）
     if (encryptedText.startsWith('CRYPTO:')) {
+      if (!isCryptoAvailable()) {
+        console.error('解密失败: 内容需要Web Crypto API解密，但当前环境不支持');
+        console.log('尝试使用备用简单解密方法');
+        
+        try {
+          // 尝试使用简单解密方法作为备用
+          // 首先移除CRYPTO:前缀
+          const simplifiedText = 'SIMPLE:' + encryptedText.substring(7);
+          return simpleDecrypt(simplifiedText, password);
+        } catch (fallbackError) {
+          console.error('备用解密也失败:', fallbackError);
+          throw new Error('解密失败: 当前浏览器不支持Web Crypto API，且备用解密也失败');
+        }
+      }
+      
+      // 移除前缀
       encryptedText = encryptedText.substring(7);
     }
     
     try {
+      // 对Base64解码添加错误处理
+      let decodedData;
+      try {
+        decodedData = atob(encryptedText);
+      } catch (base64Error) {
+        console.error('Base64解码失败:', base64Error);
+        throw new Error('解密失败: Base64解码错误，数据可能已损坏');
+      }
+      
       // 将Base64字符串转换回二进制数据
       const encryptedData = new Uint8Array(
-        atob(encryptedText).split('').map(char => char.charCodeAt(0))
+        decodedData.split('').map(char => char.charCodeAt(0))
       );
+      
+      // 检查数据长度是否合理
+      if (encryptedData.length <= 12) {
+        console.error('解密失败: 数据长度不符合AES-GCM要求');
+        throw new Error('解密失败: 数据格式错误');
+      }
       
       // 提取IV和加密数据
       const iv = encryptedData.slice(0, 12);
@@ -237,14 +264,38 @@ export async function decryptText(encryptedText: string, password: string): Prom
       
       // 转换为文本
       const decoder = new TextDecoder();
-      return decoder.decode(decryptedData);
+      const decodedText = decoder.decode(decryptedData);
+      
+      // 检查解密结果是否有效
+      if (decodedText === null || decodedText === undefined || decodedText.length === 0) {
+        console.warn('解密结果为空');
+      } else {
+        console.log(`解密成功，解密后内容长度: ${decodedText.length}`);
+      }
+      
+      return decodedText;
     } catch (cryptoError) {
-      console.error('Web Crypto API操作失败:', cryptoError);
-      throw new Error('解密失败，请检查密码是否正确');
+      console.error('Web Crypto API解密失败:', cryptoError);
+      
+      // 尝试各种处理方式
+      if (password.length < 4) {
+        throw new Error('解密失败: 密码太短，可能不正确');
+      }
+      
+      // 尝试使用简单解密作为最后的备用选项
+      try {
+        console.log('尝试使用简单解密作为最后备用...');
+        // 重新构造为简单格式并尝试解密
+        const simplifiedText = 'SIMPLE:' + btoa(encryptedText);
+        return simpleDecrypt(simplifiedText, password);
+      } catch (fallbackError) {
+        console.error('所有解密方法都失败:', fallbackError);
+        throw new Error('解密失败，请检查密码是否正确');
+      }
     }
   } catch (error) {
-    console.error('解密失败:', error);
-    throw new Error('解密失败，请检查密码是否正确');
+    console.error('解密过程中出错:', error);
+    throw error;
   }
 }
 
