@@ -193,9 +193,9 @@ export async function deletePasswordFromServer(id: string): Promise<boolean> {
 /**
  * 从服务器获取剪贴板内容
  * @param id 剪贴板ID
- * @returns 剪贴板数据或null
+ * @returns 剪贴板数据或null，如果过期则返回 { expired: true }
  */
-export async function getClipboardFromServer(id: string): Promise<Record<string, unknown> | null> {
+export async function getClipboardFromServer(id: string): Promise<Record<string, unknown> | null | { expired: true }> {
   try {
     // 检查缓存
     const cacheKey = `clipboard-${id}`;
@@ -228,6 +228,14 @@ export async function getClipboardFromServer(id: string): Promise<Record<string,
     }
     
     if (!data.exists) {
+      // 检查是否是因为过期
+      if (data.expired) {
+        console.log(`ID=${id}的剪贴板已过期`);
+        // 缓存过期结果
+        saveToCache(cacheKey, { expired: true });
+        return { expired: true };
+      }
+      
       console.log(`ID=${id}的剪贴板在服务器上不存在`);
       // 缓存结果
       saveToCache(cacheKey, null);

@@ -198,35 +198,25 @@ export async function GET(request: Request) {
     // 检查是否过期
     if (clipboard.expiresAt && clipboard.expiresAt < Date.now()) {
       console.log(`ID=${id}的剪贴板已过期`);
-      // 删除过期剪贴板
+      
+      // 删除过期的剪贴板
       delete clipboards[id];
       saveAllClipboards(clipboards);
+      
+      // 返回过期状态而不是不存在，这样前端可以区分这两种情况
       return NextResponse.json({ exists: false, expired: true }, { status: 200 });
     }
     
-    console.log(`已找到ID=${id}的剪贴板`);
+    console.log(`返回ID=${id}的剪贴板，过期时间: ${new Date(clipboard.expiresAt).toISOString()}`);
     
-    // 详细记录剪贴板数据
-    console.log(`【详细日志】准备返回的剪贴板数据:`);
-    console.log(`【详细日志】- id = ${id}`);
-    console.log(`【详细日志】- isProtected = ${clipboard.isProtected} (${typeof clipboard.isProtected})`);
-    console.log(`【详细日志】- createdAt = ${new Date(clipboard.createdAt).toLocaleString()}`);
-    console.log(`【详细日志】- expiresAt = ${new Date(clipboard.expiresAt).toLocaleString()}`);
-    console.log(`【详细日志】- lastModified = ${new Date(clipboard.lastModified).toLocaleString()}`);
-    
-    return NextResponse.json({ 
-      exists: true, 
-      clipboard: {
-        content: clipboard.content,
-        isProtected: clipboard.isProtected,
-        createdAt: clipboard.createdAt,
-        expiresAt: clipboard.expiresAt,
-        lastModified: clipboard.lastModified
-      }
+    // 返回剪贴板数据
+    return NextResponse.json({
+      exists: true,
+      clipboard
     }, { status: 200 });
   } catch (error) {
-    console.error('获取剪贴板内容出错:', error);
-    return NextResponse.json({ error: '获取剪贴板内容失败' }, { status: 500 });
+    console.error('获取剪贴板内容失败:', error);
+    return NextResponse.json({ error: '服务器错误' }, { status: 500 });
   }
 }
 
