@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import ThemeSwitch from "@/components/ThemeSwitch";
 
 export default function AboutPage() {
   return (
@@ -24,6 +27,7 @@ export default function AboutPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </Link>
+            <ThemeSwitch />
           </nav>
         </div>
       </header>

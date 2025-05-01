@@ -7,6 +7,7 @@ import { generateUniqueId } from "@/utils/helpers";
 import { getClipboard, saveClipboardPassword, addToHistory } from "@/utils/storage";
 import { savePasswordToServer } from "@/utils/api";
 import Dialog from "@/components/Dialog";
+import ThemeSwitch from "@/components/ThemeSwitch";
 
 // 会话存储的键，用于授权信息
 const SESSION_AUTHORIZED_KEY = 'clipboard-authorized';
@@ -166,6 +167,7 @@ export default function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </Link>
+            <ThemeSwitch />
           </nav>
         </div>
       </header>

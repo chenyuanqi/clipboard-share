@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { getClipboardHistory, removeFromHistory, clearClipboardHistory, ClipboardHistoryItem } from "@/utils/storage";
 import { formatChinaTime } from "@/utils/helpers";
+import ThemeSwitch from "@/components/ThemeSwitch";
 
 export default function HistoryPage() {
   const [historyItems, setHistoryItems] = useState<ClipboardHistoryItem[]>([]);
@@ -66,6 +67,7 @@ export default function HistoryPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </Link>
+            <ThemeSwitch />
           </nav>
         </div>
       </header>

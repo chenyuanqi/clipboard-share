@@ -36,6 +36,8 @@ import {
   saveClipboardToServer,
   deleteClipboardFromServer
 } from '@/utils/api';
+import Dialog from "@/components/Dialog";
+import ThemeSwitch from "@/components/ThemeSwitch";
 
 // 动态导入QR码组件，确保它只在客户端运行
 const QRCodeComponent = dynamic(() => import('@/components/QRCode'), {
@@ -1704,6 +1706,9 @@ export default function ClipboardPage() {
           <Link href="/" className="text-2xl font-bold text-gray-800 dark:text-white">
             云剪
           </Link>
+          <nav className="flex items-center">
+            <ThemeSwitch />
+          </nav>
         </div>
       </header>
       
@@ -1753,6 +1758,9 @@ export default function ClipboardPage() {
             <Link href="/" className="text-2xl font-bold text-gray-800 dark:text-white">
               云剪
             </Link>
+            <nav className="flex items-center">
+              <ThemeSwitch />
+            </nav>
           </div>
         </header>
         
@@ -1872,6 +1880,7 @@ export default function ClipboardPage() {
               </svg>
               复制内容
             </button>
+            <ThemeSwitch />
             {copyStatus && (
               <div className="absolute top-16 right-4 sm:right-6 bg-green-100 text-green-800 px-3 py-1 rounded-md shadow-md dark:bg-green-800 dark:text-green-100 transition-opacity duration-300">
                 {copyStatus}
