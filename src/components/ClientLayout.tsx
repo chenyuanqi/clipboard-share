@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import CleanupScript from "@/components/CleanupScript";
 import ThemeProvider from "@/components/ThemeProvider";
 
@@ -9,10 +9,15 @@ interface ClientLayoutProps {
 }
 
 export default function ClientLayout({ children }: ClientLayoutProps) {
+  const [mounted, setMounted] = useState(false);
+
   // 添加定期清理功能
   useEffect(() => {
-    // 首次加载时执行一次清理
-    const cleanupExpiredClipboards = async () => {
+    // 确保组件已挂载，避免服务器渲染不匹配
+    setMounted(true);
+
+    // 延迟执行清理，确保不影响初始渲染
+    const timer = setTimeout(async () => {
       try {
         // 使用force=true参数确保彻底清理
         const response = await fetch('/api/cleanup?force=true', { 
@@ -31,21 +36,16 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
       } catch (error) {
         console.error('清理过期剪贴板失败:', error);
       }
-    };
+    }, 2000); // 延迟2秒执行清理，避免影响页面加载性能
 
-    // 立即执行一次
-    cleanupExpiredClipboards();
-
-    // 设置定时器，每5分钟执行一次清理
-    const cleanupInterval = setInterval(cleanupExpiredClipboards, 5 * 60 * 1000);
-
+    // 每5分钟执行一次清理，为避免与CleanupScript冲突，这里可以去除
     // 组件卸载时清除定时器
-    return () => clearInterval(cleanupInterval);
+    return () => clearTimeout(timer);
   }, []);
 
   return (
     <ThemeProvider>
-      <CleanupScript />
+      {mounted && <CleanupScript />}
       {children}
     </ThemeProvider>
   );

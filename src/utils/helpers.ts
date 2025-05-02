@@ -162,8 +162,16 @@ function simpleEncrypt(text: string, password: string): string {
     const charCode = text.charCodeAt(i) ^ password.charCodeAt(i % password.length);
     result.push(String.fromCharCode(charCode));
   }
-  // 添加一个标记表示这是简单加密
-  return 'SIMPLE:' + btoa(result.join(''));
+  
+  try {
+    // 添加一个标记表示这是简单加密
+    // 使用encodeURIComponent先对结果进行编码，避免非ASCII字符的问题
+    return 'SIMPLE:' + btoa(encodeURIComponent(result.join('')));
+  } catch (error) {
+    console.error('简单加密过程中的编码错误:', error);
+    // 如果还是失败，尝试直接使用原始文本的UTF-8编码
+    return 'SIMPLE-UTF8:' + btoa(encodeURIComponent(text));
+  }
 }
 
 /**
@@ -173,16 +181,35 @@ function simpleEncrypt(text: string, password: string): string {
  * @returns 解密后的文本
  */
 function simpleDecrypt(encryptedText: string, password: string): string {
-  // 移除标记并解码
-  const base64 = encryptedText.substring(7);
-  const encoded = atob(base64);
-  
-  const result = [];
-  for (let i = 0; i < encoded.length; i++) {
-    const charCode = encoded.charCodeAt(i) ^ password.charCodeAt(i % password.length);
-    result.push(String.fromCharCode(charCode));
+  try {
+    // 判断加密类型
+    if (encryptedText.startsWith('SIMPLE-UTF8:')) {
+      // 如果是直接使用原始文本UTF-8编码的情况
+      const base64 = encryptedText.substring(12); // 去掉'SIMPLE-UTF8:'前缀
+      try {
+        const decodedText = decodeURIComponent(atob(base64));
+        return decodedText;
+      } catch (error) {
+        console.error('UTF8模式解密失败:', error);
+        throw new Error('解密失败: 无法解析UTF8编码内容');
+      }
+    } else {
+      // 标准SIMPLE格式
+      // 移除标记并解码
+      const base64 = encryptedText.substring(7); // 去掉'SIMPLE:'前缀
+      const encoded = decodeURIComponent(atob(base64));
+      
+      const result = [];
+      for (let i = 0; i < encoded.length; i++) {
+        const charCode = encoded.charCodeAt(i) ^ password.charCodeAt(i % password.length);
+        result.push(String.fromCharCode(charCode));
+      }
+      return result.join('');
+    }
+  } catch (error) {
+    console.error('简单解密失败:', error);
+    throw new Error('解密失败: 格式错误或内容已损坏');
   }
-  return result.join('');
 }
 
 /**
@@ -202,7 +229,13 @@ export async function encryptText(text: string, password: string): Promise<strin
     // 检查是否可以使用Web Crypto API
     if (!isCryptoAvailable()) {
       console.warn('Web Crypto API不可用，使用简单加密方法（不安全）');
-      return simpleEncrypt(text, password);
+      try {
+        return simpleEncrypt(text, password);
+      } catch (error) {
+        console.error('简单加密失败:', error);
+        // 使用最基本的URI编码作为最终回退方案
+        return 'SIMPLE-UTF8:' + btoa(encodeURIComponent(text));
+      }
     }
     
     try {
@@ -244,7 +277,13 @@ export async function encryptText(text: string, password: string): Promise<strin
     } catch (cryptoError) {
       console.error('Web Crypto API操作失败:', cryptoError);
       console.warn('回退到简单加密方法（不安全）');
-      return simpleEncrypt(text, password);
+      try {
+        return simpleEncrypt(text, password);
+      } catch (fallbackError) {
+        console.error('简单加密回退也失败:', fallbackError);
+        // 使用最基本的URI编码作为最终回退方案
+        return 'SIMPLE-UTF8:' + btoa(encodeURIComponent(text));
+      }
     }
   } catch (error) {
     console.error('加密失败:', error);
@@ -269,8 +308,8 @@ export async function decryptText(encryptedText: string, password: string): Prom
     console.log(`开始解密过程，内容类型: ${encryptedText.substring(0, 8)}...`);
     
     // 检查加密类型
-    if (encryptedText.startsWith('SIMPLE:')) {
-      console.log('检测到简单加密内容，使用简单解密方法');
+    if (encryptedText.startsWith('SIMPLE:') || encryptedText.startsWith('SIMPLE-UTF8:')) {
+      console.log(`检测到简单加密内容，使用简单解密方法 (格式: ${encryptedText.substring(0, encryptedText.indexOf(':') + 1)})`);
       return simpleDecrypt(encryptedText, password);
     }
     

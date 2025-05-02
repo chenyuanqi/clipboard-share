@@ -253,8 +253,8 @@ export function deleteClipboard(id: string): boolean {
           console.log(`已删除备份: ${key}`);
         }
       });
-    } catch (backupError) {
-      console.error("清理备份数据失败:", backupError);
+    } catch (error) {
+      console.error('删除备份失败:', error);
     }
     
     return true;
@@ -428,6 +428,19 @@ export function removeClipboardPassword(id: string): void {
 // 历史记录相关
 
 /**
+ * 保存剪贴板历史记录
+ * @param history 历史记录列表
+ */
+function setClipboardHistory(history: ClipboardHistoryItem[]): void {
+  try {
+    localStorage.setItem(CLIPBOARD_HISTORY_KEY, JSON.stringify(history));
+    console.log(`保存剪贴板历史记录成功，共 ${history.length} 条记录`);
+  } catch (error) {
+    console.error('保存剪贴板历史记录失败:', error);
+  }
+}
+
+/**
  * 添加剪贴板访问历史记录
  * @param id 剪贴板ID
  * @param content 内容
@@ -494,7 +507,7 @@ export function addToHistory(
     }
     
     // 保存更新后的历史记录
-    localStorage.setItem(CLIPBOARD_HISTORY_KEY, JSON.stringify(history));
+    setClipboardHistory(history);
     console.log(`添加/更新剪贴板历史记录: ID=${id}`);
   } catch (error) {
     console.error('添加剪贴板历史记录失败:', error);
@@ -518,7 +531,7 @@ export function getClipboardHistory(): ClipboardHistoryItem[] {
     
     // 如果有过期记录被过滤掉，重新保存历史记录
     if (validHistory.length < history.length) {
-      localStorage.setItem(CLIPBOARD_HISTORY_KEY, JSON.stringify(validHistory));
+      setClipboardHistory(validHistory);
       console.log(`清理了 ${history.length - validHistory.length} 条过期的历史记录，当前中国时间: ${formatChinaTime(now)}`);
     }
     
@@ -552,7 +565,7 @@ export function removeFromHistory(id: string): void {
     const filteredHistory = history.filter(item => item.id !== id);
     
     if (filteredHistory.length < history.length) {
-      localStorage.setItem(CLIPBOARD_HISTORY_KEY, JSON.stringify(filteredHistory));
+      setClipboardHistory(filteredHistory);
       console.log(`从历史记录中删除 ID=${id} 成功`);
     }
   } catch (error) {

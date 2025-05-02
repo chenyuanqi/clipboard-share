@@ -24,6 +24,7 @@ export default function ThemeProvider({
 }: {
   children: React.ReactNode;
 }) {
+  // 使用空字符串作为初始值避免水合不匹配
   const [theme, setTheme] = useState<Theme>("light");
   const [mounted, setMounted] = useState(false);
 
@@ -31,22 +32,10 @@ export default function ThemeProvider({
     // 挂载后再设置主题，避免服务器端渲染不一致
     setMounted(true);
     
-    // 获取存储的主题
-    const savedTheme = localStorage.getItem("theme") as Theme | null;
-    
-    // 获取系统偏好
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    
-    // 确定使用的主题
-    const initialTheme = savedTheme || (prefersDark ? "dark" : "light");
-    setTheme(initialTheme);
-    
-    // 应用主题类
-    if (initialTheme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
+    // 从文档类列表中检测当前应用的主题
+    // 这样可以与ThemeScript设置的保持一致
+    const isDarkMode = document.documentElement.classList.contains("dark");
+    setTheme(isDarkMode ? "dark" : "light");
   }, []);
 
   // 切换主题函数
@@ -55,7 +44,11 @@ export default function ThemeProvider({
       const newTheme = prevTheme === "light" ? "dark" : "light";
       
       // 保存主题到本地存储
-      localStorage.setItem("theme", newTheme);
+      try {
+        localStorage.setItem("theme", newTheme);
+      } catch (e) {
+        console.error("无法保存主题设置:", e);
+      }
       
       // 更新 HTML 类
       if (newTheme === "dark") {
@@ -74,7 +67,7 @@ export default function ThemeProvider({
     toggleTheme,
   };
 
-  // 防止闪烁的处理：在客户端水合完成前不渲染组件
+  // 在客户端水合完成前只返回子元素，不提供上下文值
   if (!mounted) {
     return <>{children}</>;
   }
