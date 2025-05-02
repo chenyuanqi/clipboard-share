@@ -156,21 +156,30 @@ export function isCryptoAvailable(): boolean {
  * @returns 加密后的文本
  */
 function simpleEncrypt(text: string, password: string): string {
-  // 一个非常简单的XOR加密，仅作为备用，不推荐用于敏感数据
-  const result = [];
-  for (let i = 0; i < text.length; i++) {
-    const charCode = text.charCodeAt(i) ^ password.charCodeAt(i % password.length);
-    result.push(String.fromCharCode(charCode));
-  }
-  
   try {
-    // 添加一个标记表示这是简单加密
-    // 使用encodeURIComponent先对结果进行编码，避免非ASCII字符的问题
-    return 'SIMPLE:' + btoa(encodeURIComponent(result.join('')));
+    // 先进行XOR加密
+    const result = [];
+    for (let i = 0; i < text.length; i++) {
+      const charCode = text.charCodeAt(i) ^ password.charCodeAt(i % password.length);
+      result.push(String.fromCharCode(charCode));
+    }
+    
+    // 使用 encodeURIComponent 来确保所有字符（包括中文和特殊字符）都能正确处理
+    const encodedText = encodeURIComponent(result.join(''));
+    
+    // 添加一个标记表示这是简单加密，并进行base64编码
+    return 'SIMPLE:' + btoa(encodedText);
   } catch (error) {
     console.error('简单加密过程中的编码错误:', error);
-    // 如果还是失败，尝试直接使用原始文本的UTF-8编码
-    return 'SIMPLE-UTF8:' + btoa(encodeURIComponent(text));
+    // 作为备选，直接对原始文本进行编码
+    try {
+      // 直接编码原始文本（不进行XOR加密）
+      const fallbackEncoded = encodeURIComponent(text);
+      return 'SIMPLE-UTF8:' + btoa(fallbackEncoded);
+    } catch (fallbackError) {
+      console.error('备选方案也失败:', fallbackError);
+      throw new Error('加密失败: 无法处理此内容');
+    }
   }
 }
 
@@ -184,31 +193,50 @@ function simpleDecrypt(encryptedText: string, password: string): string {
   try {
     // 判断加密类型
     if (encryptedText.startsWith('SIMPLE-UTF8:')) {
-      // 如果是直接使用原始文本UTF-8编码的情况
+      // 如果是直接使用原始文本编码的情况（没有XOR加密）
       const base64 = encryptedText.substring(12); // 去掉'SIMPLE-UTF8:'前缀
       try {
+        // 先进行base64解码，然后URI解码
         const decodedText = decodeURIComponent(atob(base64));
         return decodedText;
       } catch (error) {
         console.error('UTF8模式解密失败:', error);
         throw new Error('解密失败: 无法解析UTF8编码内容');
       }
-    } else {
+    } else if (encryptedText.startsWith('SIMPLE:')) {
       // 标准SIMPLE格式
       // 移除标记并解码
       const base64 = encryptedText.substring(7); // 去掉'SIMPLE:'前缀
-      const encoded = decodeURIComponent(atob(base64));
       
-      const result = [];
-      for (let i = 0; i < encoded.length; i++) {
-        const charCode = encoded.charCodeAt(i) ^ password.charCodeAt(i % password.length);
-        result.push(String.fromCharCode(charCode));
+      try {
+        // 先进行base64解码，然后URI解码
+        const decodedText = decodeURIComponent(atob(base64));
+        
+        // 使用相同的XOR算法解密
+        const result = [];
+        for (let i = 0; i < decodedText.length; i++) {
+          const charCode = decodedText.charCodeAt(i) ^ password.charCodeAt(i % password.length);
+          result.push(String.fromCharCode(charCode));
+        }
+        return result.join('');
+      } catch (error) {
+        console.error('XOR解密失败:', error);
+        // 尝试直接解码
+        try {
+          return decodeURIComponent(atob(base64));
+        } catch (finalError) {
+          console.error('所有解密方法都失败:', finalError);
+          throw new Error('解密失败: 内容已损坏或密码错误');
+        }
       }
-      return result.join('');
+    } else {
+      // 未知格式
+      console.error('未知的加密格式:', encryptedText.substring(0, 20));
+      throw new Error('解密失败: 未知的加密格式');
     }
   } catch (error) {
     console.error('简单解密失败:', error);
-    throw new Error('解密失败: 格式错误或内容已损坏');
+    throw error;
   }
 }
 
@@ -305,118 +333,123 @@ export async function decryptText(encryptedText: string, password: string): Prom
       throw new Error('解密失败: 加密文本或密码为空');
     }
     
-    console.log(`开始解密过程，内容类型: ${encryptedText.substring(0, 8)}...`);
+    console.log(`开始解密过程，内容类型: ${encryptedText.substring(0, Math.min(20, encryptedText.length))}...`);
+    
+    // 检查是否为已知的加密格式
+    if (!encryptedText.startsWith('SIMPLE:') && 
+        !encryptedText.startsWith('SIMPLE-UTF8:') && 
+        !encryptedText.startsWith('CRYPTO:')) {
+      // 不是加密内容，直接返回原文
+      console.log('内容不是已知的加密格式，可能是明文，直接返回');
+      return encryptedText;
+    }
     
     // 检查加密类型
     if (encryptedText.startsWith('SIMPLE:') || encryptedText.startsWith('SIMPLE-UTF8:')) {
       console.log(`检测到简单加密内容，使用简单解密方法 (格式: ${encryptedText.substring(0, encryptedText.indexOf(':') + 1)})`);
-      return simpleDecrypt(encryptedText, password);
+      try {
+        return simpleDecrypt(encryptedText, password);
+      } catch (simpleError) {
+        console.error('简单解密失败:', simpleError);
+        throw simpleError; // 简单解密失败应该直接报错，不再继续尝试其他方法
+      }
     }
     
-    // 如果是Web Crypto加密的内容但API不可用
+    // 处理CRYPTO格式
     if (encryptedText.startsWith('CRYPTO:')) {
+      console.log('检测到CRYPTO格式加密内容');
+      
+      // 检查Web Crypto API是否可用
       if (!isCryptoAvailable()) {
         console.error('解密失败: 内容需要Web Crypto API解密，但当前环境不支持');
-        console.log('尝试使用备用简单解密方法');
-        
-        try {
-          // 尝试使用简单解密方法作为备用
-          // 首先移除CRYPTO:前缀
-          const simplifiedText = 'SIMPLE:' + encryptedText.substring(7);
-          return simpleDecrypt(simplifiedText, password);
-        } catch (fallbackError) {
-          console.error('备用解密也失败:', fallbackError);
-          throw new Error('解密失败: 当前浏览器不支持Web Crypto API，且备用解密也失败');
-        }
+        throw new Error('浏览器不支持安全解密，请使用现代浏览器');
       }
       
       // 移除前缀
-      encryptedText = encryptedText.substring(7);
+      const cryptoData = encryptedText.substring(7);
+      
+      try {
+        // 转换base64为二进制数据
+        let binaryString;
+        try {
+          binaryString = atob(cryptoData);
+          console.log(`Base64解码成功，解码后长度: ${binaryString.length}`);
+        } catch (base64Error) {
+          console.error('Base64解码失败:', base64Error);
+          throw new Error('无法解码加密内容，可能已损坏');
+        }
+        
+        // 将二进制字符串转换为Uint8Array
+        const encryptedArray = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          encryptedArray[i] = binaryString.charCodeAt(i);
+        }
+        
+        // 检查数据长度是否足够
+        if (encryptedArray.length <= 12) {
+          console.error('加密数据太短，无法包含有效的IV');
+          throw new Error('加密内容长度不正确，可能已损坏');
+        }
+        
+        // 提取IV和加密数据
+        const iv = encryptedArray.slice(0, 12);
+        const ciphertext = encryptedArray.slice(12);
+        
+        console.log(`IV提取成功，大小: ${iv.length}字节`);
+        console.log(`加密数据大小: ${ciphertext.length}字节`);
+        
+        // 从密码生成加密密钥
+        const encoder = new TextEncoder();
+        const passwordData = encoder.encode(password);
+        const keyData = await window.crypto.subtle.digest('SHA-256', passwordData);
+        
+        // 创建解密密钥
+        const key = await window.crypto.subtle.importKey(
+          'raw',
+          keyData,
+          { name: 'AES-GCM' },
+          false,
+          ['decrypt']
+        );
+        
+        try {
+          // 解密数据
+          const decryptedBuffer = await window.crypto.subtle.decrypt(
+            {
+              name: 'AES-GCM',
+              iv
+            },
+            key,
+            ciphertext
+          );
+          
+          // 转换为文本
+          const decoder = new TextDecoder('utf-8');
+          const decryptedText = decoder.decode(decryptedBuffer);
+          
+          console.log(`解密成功，解密后内容长度: ${decryptedText.length}`);
+          return decryptedText;
+        } catch (decryptError) {
+          console.error('解密操作失败:', decryptError);
+          throw new Error('解密失败，密码可能不正确');
+        }
+      } catch (error) {
+        console.error('CRYPTO格式解密失败:', error);
+        throw error;
+      }
     }
     
-    try {
-      // 对Base64解码添加错误处理
-      let decodedData;
-      try {
-        decodedData = atob(encryptedText);
-      } catch (base64Error) {
-        console.error('Base64解码失败:', base64Error);
-        throw new Error('解密失败: Base64解码错误，数据可能已损坏');
-      }
-      
-      // 将Base64字符串转换回二进制数据
-      const encryptedData = new Uint8Array(
-        decodedData.split('').map(char => char.charCodeAt(0))
-      );
-      
-      // 检查数据长度是否合理
-      if (encryptedData.length <= 12) {
-        console.error('解密失败: 数据长度不符合AES-GCM要求');
-        throw new Error('解密失败: 数据格式错误');
-      }
-      
-      // 提取IV和加密数据
-      const iv = encryptedData.slice(0, 12);
-      const data = encryptedData.slice(12);
-      
-      // 从密码生成密钥
-      const encoder = new TextEncoder();
-      const passwordData = encoder.encode(password);
-      const keyData = await window.crypto.subtle.digest('SHA-256', passwordData);
-      
-      // 创建解密密钥
-      const key = await window.crypto.subtle.importKey(
-        'raw',
-        keyData,
-        { name: 'AES-GCM' },
-        false,
-        ['decrypt']
-      );
-      
-      // 解密数据
-      const decryptedData = await window.crypto.subtle.decrypt(
-        {
-          name: 'AES-GCM',
-          iv
-        },
-        key,
-        data
-      );
-      
-      // 转换为文本
-      const decoder = new TextDecoder();
-      const decodedText = decoder.decode(decryptedData);
-      
-      // 检查解密结果是否有效
-      if (decodedText === null || decodedText === undefined || decodedText.length === 0) {
-        console.warn('解密结果为空');
-      } else {
-        console.log(`解密成功，解密后内容长度: ${decodedText.length}`);
-      }
-      
-      return decodedText;
-    } catch (cryptoError) {
-      console.error('Web Crypto API解密失败:', cryptoError);
-      
-      // 尝试各种处理方式
-      if (password.length < 4) {
-        throw new Error('解密失败: 密码太短，可能不正确');
-      }
-      
-      // 尝试使用简单解密作为最后的备用选项
-      try {
-        console.log('尝试使用简单解密作为最后备用...');
-        // 重新构造为简单格式并尝试解密
-        const simplifiedText = 'SIMPLE:' + btoa(encryptedText);
-        return simpleDecrypt(simplifiedText, password);
-      } catch (fallbackError) {
-        console.error('所有解密方法都失败:', fallbackError);
-        throw new Error('解密失败，请检查密码是否正确');
-      }
-    }
+    // 未知格式，不应该到达这里
+    console.error('未处理的加密格式:', encryptedText.substring(0, 20));
+    throw new Error('未知的加密格式');
   } catch (error) {
     console.error('解密过程中出错:', error);
-    throw error;
+    // 抛出明确的错误信息
+    if (error instanceof Error) {
+      throw error;
+    } else {
+      throw new Error('解密失败，请检查密码是否正确');
+    }
   }
 }
 

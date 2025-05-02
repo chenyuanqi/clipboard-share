@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { generateUniqueId } from "@/utils/helpers";
 import { getClipboard, saveClipboardPassword, addToHistory } from "@/utils/storage";
 import { savePasswordToServer } from "@/utils/api";
@@ -19,6 +19,7 @@ interface AuthData {
 
 export default function Home() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [customPath, setCustomPath] = useState("");
   const [password, setPassword] = useState("");
   const [expiration, setExpiration] = useState("24"); // 默认24小时
@@ -31,6 +32,20 @@ export default function Home() {
     path: "",
     action: ""
   });
+
+  // 从URL获取clone参数并设置到自定义路径输入框
+  useEffect(() => {
+    const cloneId = searchParams.get('clone');
+    if (cloneId) {
+      setCustomPath(cloneId);
+      console.log(`从过期剪贴板页面获取到路径: ${cloneId}`);
+      
+      // 检查路径是否已存在
+      if (checkPathExists(cloneId)) {
+        setPathError("此路径已被使用，请更换其他路径或直接查看已有内容");
+      }
+    }
+  }, [searchParams]);
 
   // 检查自定义路径是否已存在
   const checkPathExists = (path: string) => {

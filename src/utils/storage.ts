@@ -46,7 +46,7 @@ export function getAllClipboards(): Record<string, ClipboardData> {
  * 保存所有剪贴板数据
  * @param clipboards 剪贴板数据映射
  */
-function saveAllClipboards(clipboards: Record<string, ClipboardData>): void {
+export function saveAllClipboards(clipboards: Record<string, ClipboardData>): void {
   try {
     localStorage.setItem(CLIPBOARD_STORAGE_KEY, JSON.stringify(clipboards));
   } catch (error) {
@@ -139,6 +139,16 @@ export function createClipboard(
       clipboards[id] = clipboard;
       saveAllClipboards(clipboards);
       console.log(`创建剪贴板成功: ID=${id}, 创建时间=${new Date(actualCreatedAt).toLocaleString()}, 过期时间=${new Date(expiresAt).toLocaleString()}`);
+      
+      // 添加到历史记录
+      addToHistory(
+        id,
+        content,
+        protectedStatus,
+        actualCreatedAt,
+        expiresAt
+      );
+      
     } catch (error) {
       console.error('保存剪贴板失败:', error);
     }
@@ -192,6 +202,18 @@ export function updateClipboardContent(id: string, content: string): ClipboardDa
       clipboards[id] = updatedClipboard;
       saveAllClipboards(clipboards);
       console.log(`更新剪贴板内容成功: ID=${id}`);
+      
+      // 添加到历史记录中
+      // 检查内容是否为加密格式，如果是加密格式，addToHistory函数会自动处理
+      // 对于一个受密码保护且加密的内容，我们仍然将其传递给历史记录，但加入了检测
+      addToHistory(
+        id,
+        content,
+        updatedClipboard.isProtected,
+        updatedClipboard.createdAt,
+        updatedClipboard.expiresAt
+      );
+      
     } catch (error) {
       console.error('保存更新后的剪贴板失败:', error);
       return null;
@@ -459,6 +481,18 @@ export function addToHistory(
     // 获取现有历史记录
     const history = getClipboardHistory();
     
+    // 检查内容是否为加密格式
+    const isEncrypted = 
+      content.startsWith('SIMPLE:') || 
+      content.startsWith('SIMPLE-UTF8:') || 
+      content.startsWith('CRYPTO:');
+    
+    // 如果内容是加密格式，不添加到历史记录或使用占位符
+    if (isEncrypted) {
+      console.log(`[addToHistory] 检测到加密内容，使用占位符代替: ID=${id}`);
+      content = "[加密内容，需要密码查看]";
+    }
+    
     // 生成标题（使用内容前 30 个字符，去除换行）
     let title = content.trim().replace(/\n/g, ' ').substring(0, 30);
     if (title.length === 0) {
@@ -495,7 +529,14 @@ export function addToHistory(
     
     if (existingIndex !== -1) {
       // 更新现有记录的访问时间和内容
-      history[existingIndex] = historyItem;
+      // 如果新内容是加密格式但现有内容不是加密格式，保留现有内容
+      if (isEncrypted && history[existingIndex].content !== "[加密内容，需要密码查看]") {
+        // 保留原有的内容，只更新访问时间
+        history[existingIndex].visitedAt = now;
+      } else {
+        // 否则更新全部内容
+        history[existingIndex] = historyItem;
+      }
     } else {
       // 添加新记录
       history.unshift(historyItem);

@@ -138,7 +138,16 @@ export default function HistoryPage() {
                           )}
                         </p>
                         <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">
-                          {item.content || '(无内容)'}
+                          {item.content.includes("[加密内容，需要密码查看]") ? (
+                            <span className="text-yellow-600 dark:text-yellow-400 italic flex items-center">
+                              <svg className="inline-block mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                              </svg>
+                              此内容已加密，需要输入密码查看
+                            </span>
+                          ) : (
+                            item.content || '(无内容)'
+                          )}
                         </p>
                       </Link>
                       <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4">

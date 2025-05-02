@@ -22,7 +22,9 @@ import {
   getClipboardPassword,
   saveClipboardPassword,
   addToHistory,
-  deleteClipboard
+  deleteClipboard,
+  getAllClipboards,
+  saveAllClipboards
 } from "@/utils/storage";
 import { decrypt } from '@/utils/crypto';
 import { PrimaryButton } from '@/components/buttons';
@@ -182,6 +184,9 @@ export default function ClipboardPage() {
   const expParam = searchParams.get("exp") || "24";
   let expirationHours: number;
   
+  // 保存原始的过期时间参数，用于保持分享链接的一致性
+  const [originalExpParam, setOriginalExpParam] = useState<string | null>(null);
+  
   if (typeof expParam === 'string' && expParam.endsWith('m')) {
     // 如果是分钟格式（例如 "5m"）
     const minutes = parseFloat(expParam.replace('m', ''));
@@ -192,6 +197,14 @@ export default function ClipboardPage() {
     expirationHours = parseFloat(expParam);
     console.log(`解析到小时格式过期时间: ${expParam} => ${expirationHours}小时`);
   }
+  
+  // 在组件加载时保存原始过期参数
+  useEffect(() => {
+    if (!originalExpParam && expParam) {
+      setOriginalExpParam(expParam);
+      console.log(`保存原始过期时间参数: ${expParam}`);
+    }
+  }, [expParam, originalExpParam]);
   
   const [content, setContent] = useState<string>("");
   const [encryptedContent, setEncryptedContent] = useState<string | null>(null);
@@ -307,15 +320,117 @@ export default function ClipboardPage() {
   
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const fullUrl = `${window.location.origin}/clipboard/${id}`;
+      let fullUrl = `${window.location.origin}/clipboard/${id}`;
+      
+      // 如果有过期时间参数，添加到URL
+      if (originalExpParam) {
+        fullUrl += `?exp=${originalExpParam}`;
+        console.log(`使用原始过期时间参数构建URL: ${originalExpParam}`);
+      } else if (expiresAt) {
+        // 获取当前剪贴板的创建时间
+        const clipboardData = getClipboard(id.toString());
+        const createdAt = clipboardData?.createdAt || Date.now();
+        
+        // 如果没有原始参数但有当前过期时间，则从当前计算
+        const diffMs = expiresAt - createdAt;
+        const diffMinutes = Math.floor(diffMs / (60 * 1000));
+        
+        // 对于短时间（小于60分钟）使用分钟格式，否则使用小时格式
+        let expParam;
+        if (diffMinutes < 60) {
+          expParam = `${diffMinutes}m`;
+        } else {
+          const diffHours = Math.floor(diffMinutes / 60);
+          expParam = `${diffHours}`;
+        }
+        
+        fullUrl += `?exp=${expParam}`;
+        console.log(`根据实际过期时间计算参数构建URL: ${expParam} (${diffMinutes}分钟)`);
+      }
+      
+      // 注意：出于安全考虑，我们不在URL中包含明文密码
+      // 仅标记此剪贴板需要密码
+      if (savedPassword) {
+        fullUrl += fullUrl.includes('?') ? '&protected=true' : '?protected=true';
+      }
+      
       setClipboardUrl(fullUrl);
+      console.log(`生成共享链接: ${fullUrl}`);
     }
-  }, [id]);
+  }, [id, originalExpParam, savedPassword, expiresAt]);
   
   // 添加剪贴板过期检查
   useEffect(() => {
+    // 增加对已加载内容的过期检查频率 - 每30秒检查一次
+    const expiryCheckInterval = setInterval(() => {
+      if (expiresAt) {
+        const isExpiredNow = isExpired(expiresAt);
+        if (isExpiredNow) {
+          console.log("定期检查：检测到剪贴板已过期", new Date(expiresAt).toLocaleString());
+          setIsExpiredClipboard(true);
+          setContent("");
+          setEncryptedContent(null);
+          setIsAuthorized(false);
+          
+          // 同时清理本地数据
+          try {
+            deleteClipboard(id.toString());
+            deleteClipboardFromServer(id.toString());
+            
+            // 清理所有可能的备份数据
+            const backupKeys = [
+              `clipboard-content-${id}`,
+              `clipboard-content-backup-${id}`,
+              `clipboard-${id}`,
+              `clipboard-pwd-${id}`,
+              `clipboard-session-${id}`,
+              `clipboard-attempts-${id}`,
+              `clipboard-block-${id}`
+            ];
+            
+            backupKeys.forEach(key => {
+              try {
+                if (localStorage.getItem(key)) {
+                  localStorage.removeItem(key);
+                }
+              } catch (e) {
+                console.error(`清理过期数据失败: ${key}`, e);
+              }
+            });
+            
+            // 清理会话存储中的授权记录
+            try {
+              const sessionAuth = sessionStorage.getItem(SESSION_AUTHORIZED_KEY);
+              if (sessionAuth) {
+                const authData = JSON.parse(sessionAuth) as AuthData;
+                if (authData[id]) {
+                  delete authData[id];
+                  sessionStorage.setItem(SESSION_AUTHORIZED_KEY, JSON.stringify(authData));
+                }
+              }
+            } catch (e) {
+              console.error(`清理会话存储失败`, e);
+            }
+          } catch (error) {
+            console.error("清理过期数据失败:", error);
+          }
+        }
+      }
+    }, 30000);
+    
+    return () => {
+      clearInterval(expiryCheckInterval);
+    };
+  }, [expiresAt, id]);
+  
+  // 立即检查当前是否过期
+  useEffect(() => {
     if (expiresAt && isExpired(expiresAt)) {
-      console.log("检测到剪贴板已过期", new Date(expiresAt).toLocaleString());
+      console.log("初始化时检测到剪贴板已过期", new Date(expiresAt).toLocaleString());
+      setIsExpiredClipboard(true);
+      setContent("");
+      setEncryptedContent(null);
+      setIsAuthorized(false);
       
       // 清理过期数据
       const cleanupExpiredData = async () => {
@@ -328,7 +443,11 @@ export default function ClipboardPage() {
           const backupKeys = [
             `clipboard-content-${id}`,
             `clipboard-content-backup-${id}`,
-            `clipboard-${id}`
+            `clipboard-${id}`,
+            `clipboard-pwd-${id}`,
+            `clipboard-session-${id}`,
+            `clipboard-attempts-${id}`,
+            `clipboard-block-${id}`
           ];
           backupKeys.forEach(key => {
             if (localStorage.getItem(key)) {
@@ -336,17 +455,29 @@ export default function ClipboardPage() {
               console.log(`已删除备份: ${key}`);
             }
           });
+          
+          // 清理会话存储中的授权记录
+          try {
+            const sessionAuth = sessionStorage.getItem(SESSION_AUTHORIZED_KEY);
+            if (sessionAuth) {
+              const authData = JSON.parse(sessionAuth) as AuthData;
+              if (authData[id]) {
+                delete authData[id];
+                sessionStorage.setItem(SESSION_AUTHORIZED_KEY, JSON.stringify(authData));
+                console.log(`已删除会话存储中的授权记录: ${id}`);
+              }
+            }
+          } catch (sessionError) {
+            console.error(`清理会话存储授权记录失败: ${id}`, sessionError);
+          }
         } catch (error) {
           console.error("删除过期数据失败:", error);
         }
-        
-        // 重定向到not-found页面
-        router.push("/not-found");
       };
       
       cleanupExpiredData();
     }
-  }, [expiresAt, id, router]);
+  }, [expiresAt, id]);
   
   // 检查密码锁定状态 - 在页面加载时执行
   useEffect(() => {
@@ -593,14 +724,20 @@ export default function ClipboardPage() {
             const isClipboardProtected = serverClipboard.isProtected === true;
             console.log(`【详细日志】服务器剪贴板保护状态: isProtected = ${isClipboardProtected}`);
             
-            // 将服务器数据同步到本地
-            clipboardToUse = createClipboard(
-              id.toString(),
-              serverClipboard.content,
-              serverClipboard.isProtected,
-              Math.max(1, Math.floor((serverClipboard.expiresAt - serverClipboard.createdAt) / (60 * 60 * 1000))),
-              serverClipboard.createdAt
-            );
+            // 将服务器数据同步到本地，但保持原始过期时间
+            clipboardToUse = {
+              id: id.toString(),
+              content: serverClipboard.content,
+              isProtected: serverClipboard.isProtected,
+              createdAt: serverClipboard.createdAt,
+              expiresAt: serverClipboard.expiresAt,
+              lastModified: serverClipboard.lastModified
+            };
+            
+            // 保存到本地存储
+            const clipboards = getAllClipboards();
+            clipboards[id.toString()] = clipboardToUse;
+            saveAllClipboards(clipboards);
             
             // 记录创建后的剪贴板状态
             console.log(`【详细日志】同步到本地后的剪贴板数据:`);
@@ -766,6 +903,8 @@ export default function ClipboardPage() {
                       console.log("检测到加密内容，尝试解密");
                       try {
                         const decrypted = await decryptText(clipboardToUse.content, autoPassword);
+                        
+                        // 检查解密是否成功 - 现在不再需要检查返回格式，因为解密失败会直接抛出异常
                         setContent(decrypted);
                         // 记录解密后的初始内容，避免初始渲染时触发保存
                         lastSavedContent.current = decrypted;
@@ -781,44 +920,8 @@ export default function ClipboardPage() {
                         );
                       } catch (decryptError) {
                         console.error("内容解密失败:", decryptError);
-                        
-                        // 解密失败但验证成功，说明可能是格式问题或API不可用
-                        // 尝试保留原始加密内容，允许用户查看或编辑
-                        const originalContent = encryptedContent;
-                        const isSimpleFormat = originalContent.startsWith('SIMPLE:');
-                        const isCryptoFormat = originalContent.startsWith('CRYPTO:');
-                        
-                        if (originalContent && (isSimpleFormat || isCryptoFormat)) {
-                          // 如果是明确的加密格式但解密失败，保留加密内容并提供明确提示
-                          setContent(`解密过程遇到问题，这可能是由于：
-1. 内容在传输过程中损坏
-2. 使用了不同设备或浏览器加密和解密
-3. 浏览器不支持所需的解密功能
-
-您可以：
-- 在此处输入新内容（您的编辑不会覆盖原始加密内容）
-- 请内容创建者重新生成一个新的剪贴板分享
-
-技术信息：格式: ${isSimpleFormat ? 'SIMPLE' : 'CRYPTO'}`);
-                          
-                          lastSavedContent.current = originalContent; // 保留原始加密内容，避免自动保存覆盖
-                          // 设置编辑模式便于用户重新输入
-                          setEditMode(true);
-                          
-                          // 显示保存状态提示
-                          setSaveStatus("解密失败，已切换到编辑模式");
-                          setTimeout(() => {
-                            setSaveStatus("您的编辑不会覆盖原始加密数据");
-                          }, 3000);
-                        } else {
-                          // 如果无法解析加密格式，使用空内容
-                          setContent("");
-                          lastSavedContent.current = "";
-                          setEditMode(true); // 直接进入编辑模式
-                        }
-                        
-                        // 使用警告提示而不是错误消息
-                        console.log("由于解密问题，已切换到编辑模式 - 您可以重新输入内容");
+                        // 处理解密失败
+                        handleDecryptionFailure(clipboardToUse.content, id.toString());
                       }
                     } else {
                       // 内容不是加密的，直接显示
@@ -1005,15 +1108,14 @@ export default function ClipboardPage() {
           await cleanupExpiredClipboardData(id.toString());
           
           // 添加安全检查：如果URL中没有特定的参数组合，可能是用户直接修改URL尝试创建新剪贴板
-          // 例如，应该同时有new=true和protected参数，以及有效期参数
+          // 只需检查new=true和exp参数，不再强制要求protected参数
           const hasRequiredParams = 
             searchParams.has("new") && 
-            searchParams.has("protected") && 
             searchParams.has("exp");
             
           if (!hasRequiredParams) {
             console.log(`安全警告：尝试创建新剪贴板但缺少必要参数 ID=${id}`);
-            console.log(`参数: new=${searchParams.get("new")}, protected=${searchParams.get("protected")}, exp=${searchParams.get("exp")}`);
+            console.log(`参数: new=${searchParams.get("new")}, exp=${searchParams.get("exp")}`);
             // 重定向到首页而不是创建新剪贴板
             router.push("/");
             return;
@@ -1068,11 +1170,15 @@ export default function ClipboardPage() {
           try {
             console.log(`【详细日志】将新创建的剪贴板保存到服务器...`);
             
+            // 保存新剪贴板的原始过期时间参数
+            setOriginalExpParam(expParam);
+            console.log(`【详细日志】保存原始过期时间参数: ${expParam}`);
+            
             const serverSaveSuccess = await saveClipboardToServer(
               id.toString(),
               "", // 空内容
               newClipboard.isProtected, 
-              expirationHours
+              expParam // 使用原始的过期参数，而不是转换后的小时数
             );
             console.log(`【详细日志】剪贴板保存到服务器结果: ${serverSaveSuccess ? '成功' : '失败'}`);
           } catch (error) {
@@ -1252,8 +1358,29 @@ export default function ClipboardPage() {
           expiresAt: new Date(currentClipboard.expiresAt).toLocaleString()
         } : '不存在');
         
-        // 计算过期时间（小时）
-        const expirationHours = expiresAt ? Math.max(1, Math.floor((expiresAt - createdTime) / (60 * 60 * 1000))) : 24;
+        // 确定使用的过期时间参数 - 优先使用原始参数保持一致性
+        let expirationParam: string | number;
+        
+        // 使用原始保存的过期参数，确保不改变分享链接的过期时间
+        if (originalExpParam) {
+          expirationParam = originalExpParam;
+          console.log(`【详细日志】使用原始过期时间参数: ${originalExpParam}`);
+        } 
+        // 如果没有原始参数但有当前过期时间，则从当前计算
+        else if (expiresAt && createdTime) {
+          const diffMs = expiresAt - createdTime;
+          const diffMinutes = Math.floor(diffMs / (60 * 1000));
+          
+          // 使用分钟单位格式传递，确保精确保留短时间设置
+          expirationParam = `${diffMinutes}m`;
+          
+          console.log(`【详细日志】计算得到过期时间: ${diffMinutes}分钟 (${diffMs}毫秒)`);
+        } 
+        // 回退到URL参数
+        else {
+          expirationParam = searchParams.get("exp") || "24";
+          console.log(`【详细日志】使用URL参数中的过期时间: ${expirationParam}`);
+        }
         
         // 处理密码保护的内容
         if (clipboardIsProtected) {
@@ -1262,12 +1389,13 @@ export default function ClipboardPage() {
           if (savedPassword && typeof savedPassword === 'string' && savedPassword.trim()) {
             try {
               // 密码有效，尝试加密内容
-              console.log("密码有效，进行内容加密");
+              console.log("密码有效，进行内容加密，内容长度:", content.length);
               
               try {
                 // 使用我们的修改后的encryptText函数（会自动检查Web Crypto API）
                 contentToSave = await encryptText(content, savedPassword);
-                console.log("内容已加密，准备保存");
+                console.log("内容已加密，准备保存, 加密内容长度:", contentToSave.length);
+                console.log("加密内容格式:", contentToSave.substring(0, Math.min(20, contentToSave.length)));
               } catch (encryptError) {
                 console.error("加密失败:", encryptError);
                 
@@ -1276,20 +1404,29 @@ export default function ClipboardPage() {
                 try {
                   console.log("尝试使用备用简单加密方法");
                   // 使用简单的加密格式
-                  contentToSave = 'SIMPLE:' + btoa(content);
+                  contentToSave = await simpleEncrypt(content, savedPassword);
                   console.log("使用备用加密格式成功，准备保存");
                 } catch (fallbackEncryptError) {
                   console.error("备用加密也失败:", fallbackEncryptError);
                   
-                  // 最后的备用选项 - 显式提示用户并提供恢复选项
-                  contentToSave = content;
-                  console.log("由于加密失败，将保存未加密内容，但会在UI中提醒用户");
-                  
-                  // 在UI中显示警告
-                  setSaveStatus("加密失败，已保存未加密内容");
-                  setTimeout(() => {
-                    setSaveStatus("请考虑导出内容并重新创建剪贴板");
-                  }, 3000);
+                  // 最后的备用选项 - 使用最简单的UTF8编码
+                  try {
+                    console.log("尝试使用最基本的UTF8编码加密");
+                    contentToSave = 'SIMPLE-UTF8:' + btoa(encodeURIComponent(content));
+                    console.log("UTF8编码成功，内容长度:", contentToSave.length);
+                  } catch (utf8Error) {
+                    console.error("所有加密方式都失败:", utf8Error);
+                    
+                    // 显式提示用户并提供恢复选项
+                    contentToSave = content;
+                    console.log("由于加密失败，将保存未加密内容，但会在UI中提醒用户");
+                    
+                    // 在UI中显示警告
+                    setSaveStatus("加密失败，已保存未加密内容");
+                    setTimeout(() => {
+                      setSaveStatus("请考虑导出内容并重新创建剪贴板");
+                    }, 3000);
+                  }
                 }
               }
               
@@ -1297,13 +1434,13 @@ export default function ClipboardPage() {
               console.log(`【详细日志】准备保存到服务器(有保护):`);
               console.log(`【详细日志】- id = ${id}`);
               console.log(`【详细日志】- clipboardIsProtected = ${clipboardIsProtected} (${typeof clipboardIsProtected})`);
-              console.log(`【详细日志】- expirationHours = ${expirationHours}`);
+              console.log(`【详细日志】- expirationParam = ${expirationParam}`);
               
               serverSaveSuccess = await saveClipboardToServer(
                 id.toString(), 
                 contentToSave, 
                 true, // 明确传递true
-                expirationHours
+                expirationParam
               );
             } catch (error) {
               console.error("加密内容失败:", error);
@@ -1316,7 +1453,7 @@ export default function ClipboardPage() {
                   id.toString(), 
                   content, 
                   clipboardIsProtected, 
-                  expirationHours
+                  expirationParam
                 );
                 setSaveStatus("已保存(未加密)");
               } catch (fallbackError) {
@@ -1336,7 +1473,7 @@ export default function ClipboardPage() {
                 id.toString(), 
                 content, 
                 clipboardIsProtected, 
-                expirationHours
+                expirationParam
               );
             } catch (error) {
               console.error("保存未加密内容失败:", error);
@@ -1352,14 +1489,14 @@ export default function ClipboardPage() {
           console.log(`【详细日志】- clipboardIsProtected = ${clipboardIsProtected} (${typeof clipboardIsProtected})`);
           console.log(`【详细日志】- isProtected = ${isProtected} (${typeof isProtected})`);
           console.log(`【详细日志】- savedPassword存在: ${!!savedPassword}`);
-          console.log(`【详细日志】- expirationHours = ${expirationHours}`);
+          console.log(`【详细日志】- expirationParam = ${expirationParam}`);
           
           try {
             serverSaveSuccess = await saveClipboardToServer(
               id.toString(), 
               content, 
               false, 
-              expirationHours
+              expirationParam
             );
           } catch (error) {
             console.error("保存未加密内容失败:", error);
@@ -1485,96 +1622,59 @@ export default function ClipboardPage() {
       setIsLoading(true);
       setErrorMessage(null);
       
-      // 检查剪贴板是否已过期
-      if (expiresAt && isExpired(expiresAt)) {
-        // 清理过期数据
-        deleteClipboard(id.toString());
-        await deleteClipboardFromServer(id.toString());
-        
-        // 清除备份数据
+      console.log("正在验证密码...", id);
+      
+      // 验证密码
+      let passwordVerified = false;
+      let serverHasPassword = false;
+      
+      // 1. 从localStorage中验证
+      const storedPassword = getClipboardPassword(id.toString());
+      const backupPassword = localStorage.getItem(`clipboard-pwd-${id}`);
+      
+      if (storedPassword && storedPassword === password) {
+        console.log("本地密码验证成功");
+        passwordVerified = true;
+      } else if (backupPassword && backupPassword === password) {
+        console.log("备份密码验证成功");
+        passwordVerified = true;
+        // 从备份恢复到主存储
+        saveClipboardPassword(id.toString(), password);
+      }
+      
+      // 2. 如果本地验证失败，尝试从服务器验证
+      if (!passwordVerified) {
         try {
-          const backupKeys = [
-            `clipboard-content-${id}`,
-            `clipboard-content-backup-${id}`,
-            `clipboard-${id}`
-          ];
-          backupKeys.forEach(key => {
-            if (localStorage.getItem(key)) {
-              localStorage.removeItem(key);
-              console.log(`已删除备份: ${key}`);
-            }
-          });
+          console.log("本地验证失败，尝试从服务器验证密码");
+          const serverVerified = await verifyPasswordOnServer(id.toString(), password);
+          
+          if (serverVerified) {
+            console.log("服务器密码验证成功");
+            passwordVerified = true;
+            serverHasPassword = true;
+          } else {
+            console.log("服务器密码验证失败");
+          }
         } catch (error) {
-          console.error("删除备份失败:", error);
+          console.error("验证服务器密码时出错:", error);
         }
-        
-        setIsLoading(false);
-        router.push("/not-found");
-        return;
-      }
-      
-      if (!encryptedContent) {
-        console.error("无加密内容可解密");
-        setErrorMessage("无内容可解密");
-        setIsLoading(false);
-        return;
-      }
-      
-      // 检查是否被阻止
-      if (cleanupExpiredAttempts()) {
-        console.log("密码尝试已被阻止");
-        return;
       }
       
       try {
-        console.log("尝试验证密码...");
+        // 获取剪贴板详情
+        const clipboardData = getClipboard(id.toString());
         
-        // 首先检查服务器上是否存在密码
-        let serverHasPassword = false;
-        try {
-          serverHasPassword = await checkPasswordExistsOnServer(id.toString());
-          console.log("服务器上是否存在密码:", serverHasPassword);
-        } catch (error) {
-          console.error("检查服务器密码失败:", error);
-        }
-        
-        // 验证密码（优先使用服务器验证）
-        let passwordVerified = false;
-        
-        // 如果服务器上有密码，首先尝试服务器验证
-        if (serverHasPassword) {
-          try {
-            const serverResult = await verifyPasswordOnServer(id.toString(), password);
-            passwordVerified = serverResult === true;
-            console.log("服务器密码验证结果:", passwordVerified ? "成功" : "失败");
-          } catch (error) {
-            console.error("服务器密码验证失败:", error);
-          }
-        }
-        
-        // 获取本地存储的密码
-        const storedPassword = getClipboardPassword(id.toString());
-        console.log("从存储中检索的密码:", storedPassword ? '存在' : 'null');
-        
-        // 尝试从备份位置获取密码
-        let backupPassword = null;
-        try {
-          const directKey = `clipboard-pwd-${id}`;
-          backupPassword = localStorage.getItem(directKey);
-          console.log("从备份位置检索的密码:", backupPassword ? '存在' : 'null');
-        } catch (error) {
-          console.error("尝试获取备份密码失败:", error);
-        }
-        
-        // 如果服务器验证失败，尝试本地验证
-        if (!passwordVerified && (storedPassword || savedPassword || backupPassword)) {
-          const localVerified = 
-            (storedPassword !== null && password === storedPassword) || 
-            (savedPassword !== null && password === savedPassword) ||
-            (backupPassword !== null && password === backupPassword);
-            
-          passwordVerified = localVerified;
-          console.log("本地密码验证结果:", localVerified ? "成功" : "失败");
+        // 检查剪贴板是否过期
+        if (clipboardData?.expiresAt && clipboardData.expiresAt < Date.now()) {
+          console.log("剪贴板已过期");
+          setIsExpiredClipboard(true);
+          setContent("");
+          setEncryptedContent(null);
+          
+          // 清理本地数据
+          await cleanupExpiredClipboardData(id.toString());
+          setIsLoading(false);
+          return;
         }
         
         // 如果密码不匹配，显示错误信息并记录失败尝试
@@ -1628,6 +1728,46 @@ export default function ClipboardPage() {
             localStorage.setItem(directKey, password);
           } catch (error) {
             console.error("备份保存密码失败:", error);
+          }
+        }
+        
+        // 尝试解密加密内容并更新历史记录
+        if (clipboardData && clipboardData.content) {
+          const isEncryptedContent = 
+            clipboardData.content.startsWith('CRYPTO:') || 
+            clipboardData.content.startsWith('SIMPLE:') || 
+            clipboardData.content.startsWith('SIMPLE-UTF8:');
+          
+          if (isEncryptedContent) {
+            try {
+              console.log("验证密码成功后尝试解密内容...");
+              const decrypted = await decryptText(clipboardData.content, password);
+              
+              // 解密成功
+              console.log("解密成功，更新内容");
+              setContent(decrypted);
+              lastSavedContent.current = decrypted;
+              
+              // 成功解密后将解密内容添加到历史记录
+              addToHistory(
+                id.toString(),
+                decrypted,
+                true,
+                clipboardData.createdAt,
+                clipboardData.expiresAt
+              );
+            } catch (decryptError) {
+              console.error("解密过程出错:", decryptError);
+              
+              // 显示解密失败的友好提示
+              setErrorMessage(`解密失败: ${decryptError instanceof Error ? decryptError.message : '密码可能不正确'}`);
+              
+              // 解密失败时仍然保留原始加密内容
+              handleDecryptionFailure(clipboardData.content, id.toString());
+              
+              setIsLoading(false);
+              return;
+            }
           }
         }
         
@@ -1789,6 +1929,74 @@ export default function ClipboardPage() {
     }
   };
 
+  // 处理解密失败的情况
+  const handleDecryptionFailure = (originalContent: string, clipboardId: string) => {
+    // 检查格式类型
+    const isSimpleFormat = originalContent.startsWith('SIMPLE:') || originalContent.startsWith('SIMPLE-UTF8:');
+    const isCryptoFormat = originalContent.startsWith('CRYPTO:');
+    
+    if (originalContent && (isSimpleFormat || isCryptoFormat)) {
+      // 如果是明确的加密格式但解密失败，保留加密内容并提供明确提示
+      setContent(`【解密失败】这是一个加密的剪贴板内容，但解密失败了
+
+可能的原因：
+1. 您需要输入正确的密码来查看此内容
+2. 此内容是在另一台设备上创建的，密码没有随链接传递
+3. 浏览器不支持所需的解密功能
+
+解决方法：
+- 请向分享此链接的人索取密码，然后在上方输入
+- 如果您知道密码但解密仍失败，可能是由于浏览器兼容性问题
+- 请分享者重新创建剪贴板并分享
+
+技术信息：加密格式: ${isSimpleFormat ? 'SIMPLE' : 'CRYPTO'}`);
+      
+      lastSavedContent.current = originalContent; // 保留原始加密内容，避免自动保存覆盖
+      // 设置编辑模式便于用户输入密码
+      setEditMode(false);
+      
+      // 显示保存状态提示
+      setSaveStatus("解密失败，请输入密码重试");
+      setTimeout(() => {
+        setSaveStatus("或联系分享者获取正确的密码");
+      }, 3000);
+      
+      console.log("由于解密问题，显示解密失败提示，等待用户输入密码");
+      
+      // 获取剪贴板信息以确定正确的过期时间
+      const clipboard = getClipboard(clipboardId);
+      if (clipboard) {
+        console.log(`【解密失败恢复】获取到本地剪贴板: ID=${clipboardId}`);
+        console.log(`【解密失败恢复】- 创建时间: ${new Date(clipboard.createdAt).toLocaleString()}`);
+        console.log(`【解密失败恢复】- 过期时间: ${new Date(clipboard.expiresAt).toLocaleString()}`);
+        
+        // 设置原始过期时间，以确保编辑保存时使用相同的过期时间
+        if (clipboard.createdAt && clipboard.expiresAt) {
+          const diffMs = clipboard.expiresAt - clipboard.createdAt;
+          const diffMinutes = Math.round(diffMs / (60 * 1000));
+          
+          // 保存为分钟格式
+          if (diffMinutes < 60) {
+            setOriginalExpParam(`${diffMinutes}m`);
+            console.log(`【解密失败恢复】设置原始过期参数: ${diffMinutes}m`);
+          } else {
+            const diffHours = diffMinutes / 60;
+            setOriginalExpParam(`${diffHours}`);
+            console.log(`【解密失败恢复】设置原始过期参数: ${diffHours}小时`);
+          }
+        }
+        
+        // 设置过期时间
+        setExpiresAt(clipboard.expiresAt);
+      }
+    } else {
+      // 如果无法解析加密格式，使用空内容
+      setContent("");
+      lastSavedContent.current = "";
+      setEditMode(true); // 直接进入编辑模式
+    }
+  };
+
   // 错误页面组件
   const ErrorPage = ({ message }: { message: string }) => (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -1804,22 +2012,81 @@ export default function ClipboardPage() {
       </header>
       
       <main className="flex-1 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 text-center">
-          <div className="mx-auto w-16 h-16 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center mb-4">
-            <svg className="w-8 h-8 text-red-500 dark:text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-bold mb-2 text-gray-800 dark:text-white">
-            无法访问剪贴板
+        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-bold text-center mb-4 text-gray-800 dark:text-white">
+            此内容受密码保护
           </h2>
-          <p className="text-gray-600 dark:text-gray-300 mb-6">
-            {message}
-          </p>
-          <Link href="/" 
-            className="inline-block py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-all duration-150">
-            返回首页创建新的剪贴板
-          </Link>
+          
+          {!isAuthorized && encryptedContent !== null && (
+            <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg mt-6">
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
+                受密码保护的剪贴板
+              </h2>
+              
+              <div className="mb-6">
+                <p className="text-gray-600 dark:text-gray-300 mb-4">
+                  请输入密码以查看此剪贴板内容。
+                  {savedPassword && (
+                    <span className="ml-1 text-green-600 dark:text-green-400">
+                      提示: 您之前设置的密码已预填入输入框。
+                    </span>
+                  )}
+                </p>
+                
+                <div className="relative mb-4">
+                  <PasswordInput
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onEnter={handleAuthorize}
+                    placeholder="输入密码"
+                    className={errorMessage ? "border-red-500 pr-12" : "pr-12"}
+                  />
+                </div>
+              
+                {errorMessage && (
+                  <div className="text-red-500 text-sm mb-4">
+                    {errorMessage}
+                  </div>
+                )}
+                
+                {passwordBlocked ? (
+                  <div className="text-red-500 mb-4">
+                    密码输入次数过多，请等待 {blockTimeRemaining} 秒后再试。
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={handleAuthorize}
+                      disabled={isLoading || !password}
+                      className={`py-2 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:transform active:scale-95 text-white font-medium rounded-lg transition-all duration-150 flex items-center ${(isLoading || !password) ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    >
+                      {isLoading ? (
+                        <>
+                          <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          验证中...
+                        </>
+                      ) : (
+                        "验证密码"
+                      )}
+                    </button>
+                    
+                    {remainingAttempts < 7 && (
+                      <div className="text-sm text-yellow-600 dark:text-yellow-400">
+                        剩余尝试次数: {remainingAttempts}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              
+              <div className="text-sm text-gray-500 dark:text-gray-400 mt-4">
+                <p>此剪贴板的内容已使用密码加密，只有知道密码的人才能查看。</p>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>
@@ -1848,99 +2115,7 @@ export default function ClipboardPage() {
   }
   
   if (!isAuthorized) {
-    return (
-      <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-        <header className="w-full p-4 sm:p-6 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm sticky top-0 z-10">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <Link href="/" className="text-2xl font-bold text-gray-800 dark:text-white">
-              云剪
-            </Link>
-            <nav className="flex items-center">
-              <ThemeSwitch />
-            </nav>
-          </div>
-        </header>
-        
-        <main className="flex-1 flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-bold text-center mb-4 text-gray-800 dark:text-white">
-              此内容受密码保护
-            </h2>
-            
-            {!isAuthorized && encryptedContent !== null && (
-              <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg mt-6">
-                <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
-                  受密码保护的剪贴板
-                </h2>
-                
-                <div className="mb-6">
-                  <p className="text-gray-600 dark:text-gray-300 mb-4">
-                    请输入密码以查看此剪贴板内容。
-                    {savedPassword && (
-                      <span className="ml-1 text-green-600 dark:text-green-400">
-                        提示: 您之前设置的密码已预填入输入框。
-                      </span>
-                    )}
-                  </p>
-                  
-                  <div className="relative mb-4">
-                    <PasswordInput
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      onEnter={handleAuthorize}
-                      placeholder="输入密码"
-                      className={errorMessage ? "border-red-500 pr-12" : "pr-12"}
-                    />
-                  </div>
-                
-                  {errorMessage && (
-                    <div className="text-red-500 text-sm mb-4">
-                      {errorMessage}
-                    </div>
-                  )}
-                  
-                  {passwordBlocked ? (
-                    <div className="text-red-500 mb-4">
-                      密码输入次数过多，请等待 {blockTimeRemaining} 秒后再试。
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between">
-                      <button
-                        onClick={handleAuthorize}
-                        disabled={isLoading || !password}
-                        className={`py-2 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:transform active:scale-95 text-white font-medium rounded-lg transition-all duration-150 flex items-center ${(isLoading || !password) ? 'opacity-70 cursor-not-allowed' : ''}`}
-                      >
-                        {isLoading ? (
-                          <>
-                            <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            验证中...
-                          </>
-                        ) : (
-                          "验证密码"
-                        )}
-                      </button>
-                      
-                      {remainingAttempts < 7 && (
-                        <div className="text-sm text-yellow-600 dark:text-yellow-400">
-                          剩余尝试次数: {remainingAttempts}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                
-                <div className="text-sm text-gray-500 dark:text-gray-400 mt-4">
-                  <p>此剪贴板的内容已使用密码加密，只有知道密码的人才能查看。</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </main>
-      </div>
-    );
+    return <ErrorPage message="您无权查看此剪贴板内容" />;
   }
   
   return (
@@ -2014,18 +2189,32 @@ export default function ClipboardPage() {
                 剪贴板内容
               </h2>
               <div className="w-full h-[calc(100vh-250px)] p-4 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-lg overflow-auto text-gray-800 dark:text-white">
-                {content && content.startsWith('CRYPTO:') ? (
+                {content && (content.startsWith('CRYPTO:') || content.startsWith('SIMPLE:') || content.startsWith('SIMPLE-UTF8:')) ? (
                   <div className="flex flex-col items-center justify-center h-full text-center">
-                    <div className="bg-yellow-100 dark:bg-yellow-800 p-4 rounded-lg max-w-md">
-                      <p className="text-yellow-800 dark:text-yellow-200 font-medium">
-                        此内容似乎未正确解密
+                    <div className="bg-yellow-100 dark:bg-yellow-800 p-6 rounded-lg max-w-md shadow-md">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-yellow-600 dark:text-yellow-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H9m3-3V8m0 0V5m0 3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-lg text-yellow-800 dark:text-yellow-200 font-medium">
+                        此内容需要密码才能查看
                       </p>
                       <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-2">
-                        可能的原因：剪贴板已过期或密码不正确
+                        请在顶部密码框中输入正确的密码并点击"验证"按钮
                       </p>
-                      <Link href="/" className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg">
-                        返回首页
-                      </Link>
+                      <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-4">
+                        如果您是收到他人分享的链接，请向分享者索取密码
+                      </p>
+                      <div className="mt-6 flex flex-col sm:flex-row justify-center gap-4">
+                        <Link href="/" className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg text-sm">
+                          返回首页
+                        </Link>
+                        <button
+                          onClick={() => {window.scrollTo({top: 0, behavior: 'smooth'})}}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm"
+                        >
+                          滚动到密码输入框
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : (

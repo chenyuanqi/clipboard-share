@@ -302,7 +302,7 @@ export async function POST(request: Request) {
     
     if (typeof expirationHours === 'string' && expirationHours.endsWith('m')) {
       // 如果直接提供了分钟数（例如 "5m"）
-      expirationMinutes = parseFloat(expirationHours);
+      expirationMinutes = parseFloat(expirationHours.replace('m', ''));
       console.log(`【服务器API】检测到分钟单位: ${expirationHours}`);
       console.log(`【服务器API】解析结果: ${expirationMinutes} 分钟 (${expirationMinutes/60} 小时)`);
     } else {
