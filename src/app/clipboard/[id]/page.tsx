@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import dynamic from 'next/dynamic';
+import QRCode from '@/components/QRCode';
 import { 
   encryptText, 
   decryptText,
@@ -26,7 +27,6 @@ import {
 import { decrypt } from '@/utils/crypto';
 import { PrimaryButton } from '@/components/buttons';
 import PasswordInput from '@/components/PasswordInput';
-import QRCode from 'react-qr-code';
 import ClipboardContent from '@/components/ClipboardContent';
 import { 
   savePasswordToServer, 
@@ -39,18 +39,31 @@ import {
 import Dialog from "@/components/Dialog";
 import ThemeSwitch from "@/components/ThemeSwitch";
 
-// 动态导入QR码组件，确保它只在客户端运行
-const QRCodeComponent = dynamic(() => import('@/components/QRCode'), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full max-w-[200px] h-[200px] flex items-center justify-center bg-gray-100">
-      <div className="animate-pulse flex flex-col items-center">
-        <div className="h-16 w-16 bg-gray-200 rounded"></div>
-        <div className="mt-2 text-sm text-gray-400">加载中...</div>
-      </div>
-    </div>
-  )
-});
+// 创建一个客户端组件包装器，用于QR码生成，防止hydration错误
+const QRCodeClientWrapper = dynamic(() => 
+  Promise.resolve((props: { url: string }) => {
+    const [isMounted, setIsMounted] = useState(false);
+    
+    useEffect(() => {
+      setIsMounted(true);
+    }, []);
+    
+    // 仅在客户端渲染时显示实际QR码
+    if (!isMounted) {
+      return (
+        <div className="w-full max-w-[200px] h-[200px] flex items-center justify-center bg-gray-100 dark:bg-gray-800">
+          <div className="animate-pulse flex flex-col items-center">
+            <div className="h-16 w-16 bg-gray-200 dark:bg-gray-600 rounded"></div>
+            <div className="mt-2 text-sm text-gray-400 dark:text-gray-500">加载中...</div>
+          </div>
+        </div>
+      );
+    }
+    
+    return <QRCode url={props.url} />;
+  }),
+  { ssr: false }
+);
 
 // 添加新的常量，用于会话存储的键名
 const SESSION_AUTHORIZED_KEY = 'clipboard-session-auth';
@@ -70,14 +83,115 @@ interface ClipboardData {
   [key: string]: any; // 允许其他属性
 }
 
+/**
+ * 显示过期剪贴板的组件
+ */
+const ExpiredClipboardPage = ({ id }: { id: string }) => (
+  <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+    <header className="w-full p-4 sm:p-6 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm sticky top-0 z-10">
+      <div className="max-w-6xl mx-auto flex items-center justify-between">
+        <Link href="/" className="text-2xl font-bold text-gray-800 dark:text-white">
+          云剪
+        </Link>
+        <ThemeSwitch />
+      </div>
+    </header>
+    
+    <main className="flex-1 flex flex-col items-center justify-center p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 max-w-md w-full text-center">
+        <div className="mb-6">
+          <svg 
+            xmlns="http://www.w3.org/2000/svg" 
+            className="h-16 w-16 text-red-500 mx-auto" 
+            fill="none" 
+            viewBox="0 0 24 24" 
+            stroke="currentColor"
+          >
+            <path 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              strokeWidth={2} 
+              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" 
+            />
+          </svg>
+        </div>
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
+          剪贴板已过期
+        </h1>
+        <p className="text-gray-600 dark:text-gray-300 mb-6">
+          此剪贴板内容已超过设定的过期时间，无法再访问。
+        </p>
+        <div className="flex flex-col space-y-4">
+          <Link 
+            href="/" 
+            className="inline-flex items-center justify-center px-5 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150"
+          >
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              className="h-5 w-5 mr-2" 
+              fill="none" 
+              viewBox="0 0 24 24" 
+              stroke="currentColor"
+            >
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth={2} 
+                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" 
+              />
+            </svg>
+            返回首页
+          </Link>
+          <Link 
+            href={`/?clone=${id}`}
+            className="inline-flex items-center justify-center px-5 py-3 bg-gray-200 hover:bg-gray-300 active:bg-gray-400 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-medium rounded-lg transition-all duration-150"
+          >
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              className="h-5 w-5 mr-2" 
+              fill="none" 
+              viewBox="0 0 24 24" 
+              stroke="currentColor"
+            >
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth={2} 
+                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" 
+              />
+            </svg>
+            使用相同路径创建新剪贴板
+          </Link>
+        </div>
+      </div>
+    </main>
+  </div>
+);
+
 export default function ClipboardPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const searchParams = useSearchParams();
+  
+  // 将URL参数转换为状态变量
   const isNewClipboard = searchParams.get("new") === "true";
   const isProtected = searchParams.get("protected") === "true";
-  const directAccess = searchParams.get("direct") === "true"; // 是否允许直接访问
-  const expirationHours = parseInt(searchParams.get("exp") || "1", 10);
+  const directAccess = searchParams.get("direct") === "true";
+  
+  // 解析过期时间参数，支持分钟形式（以m结尾）和小时形式
+  const expParam = searchParams.get("exp") || "24";
+  let expirationHours: number;
+  
+  if (typeof expParam === 'string' && expParam.endsWith('m')) {
+    // 如果是分钟格式（例如 "5m"）
+    const minutes = parseFloat(expParam.replace('m', ''));
+    expirationHours = minutes / 60; // 转换为小时
+    console.log(`解析到分钟格式过期时间: ${expParam} => ${minutes}分钟 (${expirationHours}小时)`);
+  } else {
+    // 默认格式：小时（例如 "24"）
+    expirationHours = parseFloat(expParam);
+    console.log(`解析到小时格式过期时间: ${expParam} => ${expirationHours}小时`);
+  }
   
   const [content, setContent] = useState<string>("");
   const [encryptedContent, setEncryptedContent] = useState<string | null>(null);
@@ -96,6 +210,7 @@ export default function ClipboardPage() {
   const [remainingAttempts, setRemainingAttempts] = useState(10);
   const [isCheckingServerPassword, setIsCheckingServerPassword] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
+  const [isExpiredClipboard, setIsExpiredClipboard] = useState<boolean>(false);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -104,6 +219,61 @@ export default function ClipboardPage() {
   const isInitialRender = useRef(true);
   // 添加上一次保存的内容ref
   const lastSavedContent = useRef("");
+  
+  // 检查剪贴板是否过期
+  const checkAndCleanExpiredClipboard = async (clipboardId: string) => {
+    console.log(`检查剪贴板 ${clipboardId} 是否过期`);
+    
+    // 先检查本地存储
+    const localClipboard = getClipboard(clipboardId);
+    if (localClipboard && isExpired(localClipboard.expiresAt)) {
+      console.log(`本地数据显示剪贴板 ${clipboardId} 已过期`);
+      return true;
+    }
+    
+    // 检查服务器状态
+    try {
+      const serverClipboard = await getClipboardFromServer(clipboardId);
+      if (serverClipboard && 'expired' in serverClipboard) {
+        console.log(`服务器数据显示剪贴板 ${clipboardId} 已过期`);
+        return true;
+      }
+    } catch (error) {
+      console.error(`检查服务器端剪贴板状态失败:`, error);
+    }
+    
+    return false;
+  };
+
+  // 清理过期的剪贴板数据
+  const cleanupExpiredClipboardData = async (clipboardId: string) => {
+    console.log(`清理过期的剪贴板数据: ${clipboardId}`);
+    
+    // 删除本地存储
+    deleteClipboard(clipboardId);
+    
+    // 删除服务器上的数据
+    await deleteClipboardFromServer(clipboardId);
+    
+    // 清除备份数据
+    try {
+      const backupKeys = [
+        `clipboard-content-${clipboardId}`,
+        `clipboard-content-backup-${clipboardId}`,
+        `clipboard-${clipboardId}`,
+        `clipboard-pwd-${clipboardId}`
+      ];
+      
+      backupKeys.forEach(key => {
+        if (localStorage.getItem(key)) {
+          localStorage.removeItem(key);
+          console.log(`已删除备份: ${key}`);
+        }
+      });
+    } catch (error) {
+      console.error("删除备份失败:", error);
+    }
+  };
   
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -323,9 +493,9 @@ export default function ClipboardPage() {
               console.error("删除备份失败:", error);
             }
             
-            // 直接跳转到not-found页面
+            // 设置剪贴板为过期状态，而不是跳转到not-found页面
             setIsLoading(false);
-            router.push("/not-found");
+            setIsExpiredClipboard(true);
             return false;
           }
         }
@@ -360,9 +530,9 @@ export default function ClipboardPage() {
             console.error("删除备份失败:", error);
           }
           
-          // 直接跳转到not-found页面，而不是显示错误消息
+          // 设置剪贴板为过期状态，而不是跳转到not-found页面
           setIsLoading(false);
-          router.push("/not-found");
+          setIsExpiredClipboard(true);
           return false;
         }
 
@@ -420,71 +590,27 @@ export default function ClipboardPage() {
           if (isExpired(localClipboard.expiresAt)) {
             console.log("本地剪贴板数据已过期");
             deleteClipboard(id.toString());
+            // 设置剪贴板为过期状态
             setIsLoading(false);
-            setErrorMessage("此剪贴板内容已过期，无法访问");
+            setIsExpiredClipboard(true);
             return false;
           }
           
           clipboardToUse = localClipboard;
           contentSource = "local";
         } else {
-          // 尝试从备份恢复
-          console.log("尝试从备份恢复剪贴板数据");
-          
-          // 定义可能的备份位置列表
-          const backupSources = [
-            { key: `clipboard-content-${id}`, name: "常规备份" },
-            { key: `clipboard-content-backup-${id}`, name: "自动保存备份" },
-            { key: `clipboard-${id}`, name: "对象备份", isObject: true },
-          ];
-          
-          // 尝试所有备份位置
-          for (const source of backupSources) {
-            try {
-              let recoveredContent = null;
-              
-              if (source.isObject) {
-                // 对于对象类型的备份
-                const objData = localStorage.getItem(source.key);
-                if (objData) {
-                  try {
-                    const parsed = JSON.parse(objData);
-                    if (parsed && parsed.content) {
-                      recoveredContent = parsed.content;
-                    }
-                  } catch (parseError) {
-                    console.error(`从${source.name}解析对象失败:`, parseError);
-                  }
-                }
-              } else {
-                // 字符串类型的备份
-                recoveredContent = localStorage.getItem(source.key);
-              }
-              
-              if (recoveredContent) {
-                console.log(`从${source.name}中找到剪贴板内容`);
-                // 创建新的剪贴板对象
-                clipboardToUse = createClipboard(id.toString(), recoveredContent, isProtected, 24); // 默认24小时
-                contentSource = source.name;
-                break; // 成功恢复，退出循环
-              }
-            } catch (error) {
-              console.error(`从${source.name}恢复失败:`, error);
-            }
-          }
-          
-          if (backupContent && !clipboardToUse) {
-            console.log("使用最简单的备份内容");
-            clipboardToUse = createClipboard(id.toString(), backupContent, isProtected, 24); // 默认24小时
-            contentSource = "simple_backup";
-          }
+          // 不再从备份恢复过期的剪贴板，直接显示过期页面
+          console.log("没有找到有效的剪贴板数据，认为已过期");
+          setIsLoading(false);
+          setIsExpiredClipboard(true);
+          return false;
         }
         
         // 如果没有找到任何数据，返回404
         if (!clipboardToUse) {
           console.log("没有找到剪贴板数据");
           setIsLoading(false);
-          router.push("/not-found");
+          setIsExpiredClipboard(true);
           return false;
         }
         
@@ -825,7 +951,7 @@ export default function ClipboardPage() {
         console.log(`【详细日志】- isNewClipboard = ${isNewClipboard}`);
         console.log(`【详细日志】- isProtected = ${isProtected} (${typeof isProtected})`);
         console.log(`【详细日志】- directAccess = ${directAccess}`);
-        console.log(`【详细日志】- expirationHours = ${expirationHours}`);
+        console.log(`【详细日志】- expirationHours = ${expirationHours} (${expirationHours * 60}分钟)`);
         console.log(`【详细日志】- 原始URL参数:`);
         console.log(`【详细日志】  - new = ${searchParams.get("new")}`);
         console.log(`【详细日志】  - protected = ${searchParams.get("protected")}`);
@@ -839,6 +965,16 @@ export default function ClipboardPage() {
           return;
         }
         
+        // 首先检查剪贴板是否过期，无论是否为新剪贴板
+        const isExpiredCheck = await checkAndCleanExpiredClipboard(id.toString());
+        if (isExpiredCheck) {
+          console.log(`剪贴板 ${id} 已过期，不会创建新剪贴板`);
+          await cleanupExpiredClipboardData(id.toString());
+          setIsLoading(false);
+          setIsExpiredClipboard(true);
+          return;
+        }
+        
         // 如果是新剪贴板
         if (isNewClipboard) {
           console.log("加载新创建的剪贴板");
@@ -846,32 +982,14 @@ export default function ClipboardPage() {
           // 检查剪贴板是否已经存在 (防止重复创建)
           const existingClipboard = getClipboard(id.toString());
           if (existingClipboard) {
-            // 检查是否过期
+            // 检查是否过期 (再次检查确保不会使用过期的剪贴板)
             if (existingClipboard.expiresAt && isExpired(existingClipboard.expiresAt)) {
               console.log("本地剪贴板数据已过期");
-              deleteClipboard(id.toString());
-              // 同时删除服务器上的数据
-              await deleteClipboardFromServer(id.toString());
+              await cleanupExpiredClipboardData(id.toString());
               
-              // 清除备份数据
-              try {
-                const backupKeys = [
-                  `clipboard-content-${id}`,
-                  `clipboard-content-backup-${id}`,
-                  `clipboard-${id}`
-                ];
-                backupKeys.forEach(key => {
-                  if (localStorage.getItem(key)) {
-                    localStorage.removeItem(key);
-                    console.log(`已删除备份: ${key}`);
-                  }
-                });
-              } catch (error) {
-                console.error("删除备份失败:", error);
-              }
-              
+              // 不是404，而是显示过期页面
               setIsLoading(false);
-              router.push("/not-found");
+              setIsExpiredClipboard(true);
               return;
             }
             
@@ -1074,6 +1192,7 @@ export default function ClipboardPage() {
       } catch (error) {
         console.error("加载剪贴板失败:", error);
         setIsLoading(false);
+        setIsExpiredClipboard(true); // 出错时也显示过期页面，而不是显示错误消息
       }
     };
     
@@ -1734,6 +1853,12 @@ export default function ClipboardPage() {
     </div>
   );
 
+  // 如果剪贴板已过期，显示过期页面
+  if (isExpiredClipboard) {
+    return <ExpiredClipboardPage id={id} />;
+  }
+
+  // 如果正在加载，显示加载状态
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -1996,7 +2121,7 @@ export default function ClipboardPage() {
             
             <div className="flex justify-center bg-white p-2 rounded">
               {/* 使用动态导入的QR码组件 */}
-              <QRCodeComponent url={clipboardUrl} />
+              <QRCodeClientWrapper url={clipboardUrl} />
             </div>
           </div>
         </div>

@@ -1,123 +1,119 @@
 import { NextResponse } from 'next/server';
-import { cleanupExpiredClipboards } from '@/utils/storage';
+import { cleanupExpiredClipboards } from '@/app/api/clipboard/route';
+import { formatChinaTime, getChinaTimeMs } from '@/utils/helpers';
 import fs from 'fs';
 import path from 'path';
-import { formatChinaTime } from '@/utils/helpers';
-
-// 导入服务端清理函数
-const DATA_DIR = path.join(process.cwd(), 'data');
-const CLIPBOARD_FILE = path.join(DATA_DIR, 'clipboards.json');
-const PASSWORDS_FILE = path.join(DATA_DIR, 'passwords.json');
-
-// 定义剪贴板数据类型
-interface Clipboard {
-  content: string;
-  isProtected: boolean;
-  createdAt: number;
-  expiresAt: number;
-  lastModified: number;
-}
-
-// 服务端清理函数
-function cleanupExpiredServerClipboards(): { deletedClipboards: number, deletedPasswords: number } {
-  try {
-    const now = Date.now();
-    let clipboardsUpdated = false;
-    let passwordsUpdated = false;
-    const expiredIds: string[] = [];
-    
-    // 清理剪贴板数据
-    if (fs.existsSync(CLIPBOARD_FILE)) {
-      const clipboardData = fs.readFileSync(CLIPBOARD_FILE, 'utf8');
-      if (clipboardData.trim()) {
-        try {
-          const clipboards = JSON.parse(clipboardData) as Record<string, Clipboard>;
-          
-          // 找出所有过期的剪贴板ID，包括过期超过1小时的
-          for (const [id, clipboard] of Object.entries(clipboards)) {
-            // 计算1小时前的时间戳
-            const oneHourAgo = now - (1 * 3600 * 1000);
-            
-            // 检查是否过期，或过期超过1小时
-            if (clipboard.expiresAt && clipboard.expiresAt < now) {
-              expiredIds.push(id);
-              delete clipboards[id];
-              clipboardsUpdated = true;
-              
-              // 记录额外日志信息
-              const hoursSinceExpiry = ((now - clipboard.expiresAt) / (3600 * 1000)).toFixed(1);
-              console.log(`[清理API] 清理过期剪贴板：ID=${id}，过期时间：${formatChinaTime(clipboard.expiresAt)}，已过期 ${hoursSinceExpiry} 小时`);
-            }
-          }
-          
-          // 保存更新后的剪贴板数据
-          if (clipboardsUpdated) {
-            fs.writeFileSync(CLIPBOARD_FILE, JSON.stringify(clipboards, null, 2), 'utf8');
-            console.log(`[清理API] 清理了 ${expiredIds.length} 个过期剪贴板`);
-          }
-        } catch (error) {
-          console.error('[清理API] 解析剪贴板数据失败:', error);
-        }
-      }
-    }
-    
-    // 清理密码数据
-    let deletedPasswordCount = 0;
-    if (expiredIds.length > 0 && fs.existsSync(PASSWORDS_FILE)) {
-      const passwordData = fs.readFileSync(PASSWORDS_FILE, 'utf8');
-      if (passwordData.trim()) {
-        try {
-          const passwords = JSON.parse(passwordData);
-          
-          // 删除对应的密码
-          for (const id of expiredIds) {
-            if (passwords[id]) {
-              delete passwords[id];
-              passwordsUpdated = true;
-              deletedPasswordCount++;
-            }
-          }
-          
-          // 保存更新后的密码数据
-          if (passwordsUpdated) {
-            fs.writeFileSync(PASSWORDS_FILE, JSON.stringify(passwords, null, 2), 'utf8');
-            console.log(`[清理API] 清理了 ${deletedPasswordCount} 个密码记录`);
-          }
-        } catch (error) {
-          console.error('[清理API] 解析密码数据失败:', error);
-        }
-      }
-    }
-    
-    return {
-      deletedClipboards: expiredIds.length,
-      deletedPasswords: deletedPasswordCount
-    };
-  } catch (error) {
-    console.error('[清理API] 清理过程出错:', error);
-    return { deletedClipboards: 0, deletedPasswords: 0 };
-  }
-}
 
 // 此路由处理剪贴板的清理
 // 可以通过cron作业定期调用此API
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // 在服务器端执行清理
-    const serverCleanupResult = cleanupExpiredServerClipboards();
+    const { searchParams } = new URL(request.url);
+    const forceMode = searchParams.get('force') === 'true';
+    const hours = searchParams.get('hours');
     
-    // 返回清理结果
+    // 获取当前中国时区时间
+    const now = getChinaTimeMs();
+    console.log(`清理过期剪贴板服务开始执行，当前中国时间: ${formatChinaTime(now)}`);
+    
+    // 如果指定了小时，使用该值，否则使用默认的0（立即清理）
+    const additionalHours = hours ? parseInt(hours) : 0;
+    
+    // 调用本地文件中的清理函数而不是从clipboard路由导入
+    const result = cleanupLocalExpiredClipboards(additionalHours);
+    
+    // 强制模式下无法在服务器端清理localStorage
+    // 这部分将由客户端脚本完成
+    
     return NextResponse.json({
       success: true,
-      serverCleanup: serverCleanupResult,
-      message: '清理过程已完成',
-      note: '此API除了服务器端清理外，客户端也会在页面加载时自动清理本地过期数据'
+      cleanedCount: result.deleted,
+      cleanedIds: result.ids,
+      timestamp: now,
+      formattedTime: formatChinaTime(now)
     });
   } catch (error) {
-    console.error('清理过程出错:', error);
-    return NextResponse.json({ error: '清理过程失败' }, { status: 500 });
+    console.error('清理过期剪贴板失败:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: '清理过程中出错' 
+    }, { status: 500 });
   }
 }
 
 // 实际的清理是在每次页面加载时由客户端执行的
 // 见 storage.ts 中的初始化代码 
+
+function cleanupLocalExpiredClipboards(additionalHours: number = 0): { deleted: number, ids: string[] } {
+  // 日志
+  console.log(`[清理API] 开始清理过期超过${additionalHours}小时的剪贴板...`);
+  
+  // 存储目录
+  const clipboardsDir = path.join(process.cwd(), 'data', 'clipboards');
+  const passwordsDir = path.join(process.cwd(), 'data', 'passwords');
+  
+  // 如果目录不存在，无需清理
+  if (!fs.existsSync(clipboardsDir)) {
+    console.log(`[清理API] 目录不存在，无需清理: ${clipboardsDir}`);
+    return { deleted: 0, ids: [] };
+  }
+  
+  // 列出所有JSON文件
+  const files = fs.readdirSync(clipboardsDir)
+    .filter(file => file.endsWith('.json'));
+    
+  console.log(`[清理API] 找到${files.length}个剪贴板文件`);
+  
+  // 当前中国时间
+  const now = getChinaTimeMs();
+  console.log(`[清理API] 当前中国时间: ${formatChinaTime(now)}`);
+  
+  const deletedFiles: string[] = [];
+  
+  // 检查每个文件
+  for (const file of files) {
+    try {
+      const filePath = path.join(clipboardsDir, file);
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      const clipboard = JSON.parse(fileContent);
+      
+      // 检查是否过期
+      const expiresAt = clipboard.expiresAt;
+      
+      // 额外宽限期（毫秒）
+      const graceMilliseconds = additionalHours * 60 * 60 * 1000;
+      
+      // 如果剪贴板已过期超过指定的额外小时数
+      if (now > expiresAt + graceMilliseconds) {
+        // 计算过期了多少小时
+        const hoursSinceExpiry = (now - expiresAt) / (60 * 60 * 1000);
+        
+        // 获取ID（去掉.json后缀）
+        const id = file.replace('.json', '');
+        
+        console.log(`[清理API] 清理过期剪贴板：ID=${id}，过期时间：${formatChinaTime(clipboard.expiresAt)}，已过期 ${hoursSinceExpiry.toFixed(2)} 小时`);
+        
+        // 删除剪贴板文件
+        fs.unlinkSync(filePath);
+        
+        // 删除对应的密码文件（如果存在）
+        const passwordPath = path.join(passwordsDir, `${id}.json`);
+        if (fs.existsSync(passwordPath)) {
+          fs.unlinkSync(passwordPath);
+          console.log(`[清理API] 删除密码文件: ${id}.json`);
+        }
+        
+        deletedFiles.push(id);
+      }
+    } catch (error) {
+      console.error(`[清理API] 处理文件时出错 ${file}:`, error);
+    }
+  }
+  
+  console.log(`[清理API] 清理完成，删除了${deletedFiles.length}个过期剪贴板`);
+  
+  return {
+    deleted: deletedFiles.length,
+    ids: deletedFiles
+  };
+} 

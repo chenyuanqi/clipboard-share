@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import CleanupScript from "@/components/CleanupScript";
-import ThemeProvider from "@/components/ThemeProvider";
+import ClientLayout from "@/components/ClientLayout";
 import ThemeScript from "@/components/ThemeScript";
 
 const geistSans = Geist({
@@ -15,6 +14,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// 这是在服务器组件中导出的元数据
 export const metadata: Metadata = {
   title: "云剪 | 安全简单的文本共享工具",
   description: "安全地分享文本信息，支持密码保护和临时链接，无需注册即可使用。",
@@ -23,6 +23,7 @@ export const metadata: Metadata = {
   viewport: "width=device-width, initial-scale=1.0",
 };
 
+// 根布局是服务器组件
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -37,10 +38,8 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
         suppressHydrationWarning
       >
-        <ThemeProvider>
-          <CleanupScript />
-          {children}
-        </ThemeProvider>
+        {/* 使用客户端组件来处理需要useEffect的逻辑 */}
+        <ClientLayout>{children}</ClientLayout>
       </body>
     </html>
   );

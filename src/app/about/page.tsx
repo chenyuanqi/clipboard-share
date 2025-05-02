@@ -142,7 +142,7 @@ export default function AboutPage() {
       </main>
       
       <footer className="p-4 sm:p-6 border-t border-gray-200 dark:border-gray-800 text-center text-gray-600 dark:text-gray-400">
-        <p>© {new Date().getFullYear()} 云剪 - 安全地分享您的内容</p>
+        <p>© 2024 云剪 - 安全地分享您的内容</p>
       </footer>
     </div>
   );

@@ -1,4 +1,5 @@
 import { isExpired, calculateExpirationTime } from './helpers';
+import { formatChinaTime, getChinaTimeMs } from "./helpers";
 
 // 剪贴板数据接口
 export interface ClipboardData {
@@ -79,8 +80,8 @@ export function getClipboard(id: string): ClipboardData | null {
  * @param id 剪贴板ID
  * @param content 初始内容
  * @param isProtected 是否密码保护
- * @param expirationHours 过期小时数
- * @param createdAt 创建时间（可选），如果不提供则使用当前时间
+ * @param expirationHours 过期小时数（可以是小数，如0.0833表示5分钟，0.5表示30分钟）
+ * @param createdAt 创建时间（可选），如果不提供则使用当前中国时区时间
  * @returns 新创建的剪贴板数据
  */
 export function createClipboard(
@@ -102,17 +103,26 @@ export function createClipboard(
       "Boolean(isProtected)": Boolean(isProtected),
       "!!isProtected": !!isProtected
     })}`);
-    console.log(`【详细日志】- expirationHours = ${expirationHours}`);
-    console.log(`【详细日志】- createdAt = ${createdAt ? new Date(createdAt).toLocaleString() : '未提供'}`);
+    
+    // 计算分钟数，用于日志显示
+    const minutes = Math.floor(expirationHours * 60);
+    
+    if (expirationHours >= 1) {
+      console.log(`【详细日志】- expirationHours = ${expirationHours}小时 (${minutes}分钟)`);
+    } else {
+      console.log(`【详细日志】- expirationHours = ${minutes}分钟`);
+    }
     
     // 确保isProtected参数正确转换为布尔值
     const protectedStatus = Boolean(isProtected);
     
-    // 获取当前时间作为创建时间，或使用传入的创建时间
-    const actualCreatedAt = createdAt || Date.now();
+    // 获取当前中国时区时间作为创建时间，或使用传入的创建时间
+    const actualCreatedAt = createdAt || getChinaTimeMs();
+    console.log(`【详细日志】- 创建时间(中国时区): ${formatChinaTime(actualCreatedAt)} (${actualCreatedAt})`);
     
     // 基于创建时间计算过期时间
     const expiresAt = calculateExpirationTime(expirationHours, actualCreatedAt);
+    console.log(`【详细日志】- 过期时间(中国时区): ${formatChinaTime(expiresAt)} (${expiresAt})`);
     
     const clipboard: ClipboardData = {
       id,
@@ -173,7 +183,7 @@ export function updateClipboardContent(id: string, content: string): ClipboardDa
     const updatedClipboard: ClipboardData = {
       ...clipboard,
       content,
-      lastModified: Date.now()
+      lastModified: getChinaTimeMs()
     };
     
     // 保存到localStorage
@@ -204,22 +214,54 @@ export function updateClipboardContent(id: string, content: string): ClipboardDa
 /**
  * 删除剪贴板
  * @param id 剪贴板ID
- * @returns 是否成功删除
+ * @returns 是否成功
  */
 export function deleteClipboard(id: string): boolean {
-  const clipboards = getAllClipboards();
-  
-  if (!clipboards[id]) {
+  try {
+    // 从历史记录中删除
+    const historyData = getClipboardHistory();
+    const updatedHistory = historyData.filter(item => item.id !== id);
+    setClipboardHistory(updatedHistory);
+    
+    // 从Map中删除
+    const clipboardData = getAllClipboards();
+    delete clipboardData[id];
+    localStorage.setItem(CLIPBOARD_STORAGE_KEY, JSON.stringify(clipboardData));
+    
+    console.log(`剪贴板 ${id} 已从本地存储中删除`);
+    
+    // 同时清理该ID的密码和备份
+    try {
+      // 清理密码
+      const pwdKey = `${CLIPBOARD_PASSWORDS_KEY}-${id}`;
+      if (localStorage.getItem(pwdKey)) {
+        localStorage.removeItem(pwdKey);
+        console.log(`已删除密码: ${pwdKey}`);
+      }
+      
+      // 清理备份
+      const backupKeys = [
+        `clipboard-content-${id}`,
+        `clipboard-content-backup-${id}`,
+        `clipboard-${id}`,
+        `clipboard-pwd-${id}`
+      ];
+      
+      backupKeys.forEach(key => {
+        if (localStorage.getItem(key)) {
+          localStorage.removeItem(key);
+          console.log(`已删除备份: ${key}`);
+        }
+      });
+    } catch (backupError) {
+      console.error("清理备份数据失败:", backupError);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error(`删除剪贴板 ${id} 失败:`, error);
     return false;
   }
-  
-  delete clipboards[id];
-  saveAllClipboards(clipboards);
-  
-  // 同时删除关联的密码
-  removeClipboardPassword(id);
-  
-  return true;
 }
 
 /**
@@ -230,16 +272,28 @@ export function cleanupExpiredClipboards(): number {
   const clipboards = getAllClipboards();
   let count = 0;
   
+  const now = getChinaTimeMs();
+  console.log(`[cleanupExpiredClipboards] 开始检查过期剪贴板，当前中国时间: ${formatChinaTime(now)} (${now})`);
+  
   for (const id in clipboards) {
-    if (isExpired(clipboards[id].expiresAt)) {
+    const clipboard = clipboards[id];
+    const isExp = isExpired(clipboard.expiresAt);
+    
+    console.log(`[cleanupExpiredClipboards] 检查ID=${id}, 过期时间: ${formatChinaTime(clipboard.expiresAt)} (${clipboard.expiresAt}), 是否过期: ${isExp}`);
+    
+    if (isExp) {
       delete clipboards[id];
       removeClipboardPassword(id);
       count++;
+      console.log(`[cleanupExpiredClipboards] 删除过期剪贴板: ID=${id}`);
     }
   }
   
   if (count > 0) {
     saveAllClipboards(clipboards);
+    console.log(`[cleanupExpiredClipboards] 共删除${count}个过期剪贴板`);
+  } else {
+    console.log(`[cleanupExpiredClipboards] 没有找到过期剪贴板`);
   }
   
   return count;
@@ -378,15 +432,15 @@ export function removeClipboardPassword(id: string): void {
  * @param id 剪贴板ID
  * @param content 内容
  * @param isProtected 是否受密码保护
- * @param createdAt 创建时间
- * @param expiresAt 过期时间
+ * @param createdAt 创建时间（中国时区）
+ * @param expiresAt 过期时间（中国时区）
  */
 export function addToHistory(
   id: string,
   content: string,
   isProtected: boolean = false,
-  createdAt: number = Date.now(),
-  expiresAt: number = Date.now() + 24 * 60 * 60 * 1000
+  createdAt: number = getChinaTimeMs(),
+  expiresAt: number = getChinaTimeMs() + 24 * 60 * 60 * 1000
 ): void {
   try {
     // 获取现有历史记录
@@ -407,7 +461,13 @@ export function addToHistory(
     }
     
     // 更新或添加历史记录
-    const now = Date.now();
+    const now = getChinaTimeMs();
+    
+    console.log(`[addToHistory] 添加历史记录: ID=${id}`);
+    console.log(`[addToHistory] 当前中国时间: ${formatChinaTime(now)} (${now})`);
+    console.log(`[addToHistory] 创建时间: ${formatChinaTime(createdAt)} (${createdAt})`);
+    console.log(`[addToHistory] 过期时间: ${formatChinaTime(expiresAt)} (${expiresAt})`);
+    
     const existingIndex = history.findIndex(item => item.id === id);
     
     const historyItem: ClipboardHistoryItem = {
@@ -452,14 +512,14 @@ export function getClipboardHistory(): ClipboardHistoryItem[] {
     
     const history = JSON.parse(data) as ClipboardHistoryItem[];
     
-    // 清理已过期的记录
-    const now = Date.now();
+    // 使用中国时区时间清理已过期的记录
+    const now = getChinaTimeMs();
     const validHistory = history.filter(item => item.expiresAt > now);
     
     // 如果有过期记录被过滤掉，重新保存历史记录
     if (validHistory.length < history.length) {
       localStorage.setItem(CLIPBOARD_HISTORY_KEY, JSON.stringify(validHistory));
-      console.log(`清理了 ${history.length - validHistory.length} 条过期的历史记录`);
+      console.log(`清理了 ${history.length - validHistory.length} 条过期的历史记录，当前中国时间: ${formatChinaTime(now)}`);
     }
     
     // 按访问时间倒序排序

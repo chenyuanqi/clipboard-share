@@ -193,49 +193,55 @@ export async function deletePasswordFromServer(id: string): Promise<boolean> {
 /**
  * 从服务器获取剪贴板内容
  * @param id 剪贴板ID
- * @returns 剪贴板数据或null，如果过期则返回 { expired: true }
+ * @returns 剪贴板数据或null；如果剪贴板已过期，返回{ expired: true }
  */
 export async function getClipboardFromServer(id: string): Promise<Record<string, unknown> | null | { expired: true }> {
   try {
-    // 检查缓存
-    const cacheKey = `clipboard-${id}`;
-    const cachedResult = getFromCache(cacheKey);
-    if (cachedResult !== undefined) {
-      console.log(`使用缓存的剪贴板内容 (ID=${id})`);
-      return cachedResult;
+    console.log(`正在从服务器获取剪贴板内容 (ID=${id})...`);
+    
+    // 尝试从缓存获取
+    const cacheKey = `clipboard_${id}_${new Date().toDateString()}`;
+    const cachedData = getFromCache(cacheKey);
+    if (cachedData !== undefined) {
+      console.log(`使用缓存的剪贴板数据 (ID=${id})`);
+      if (cachedData && (cachedData as any).expired === true) {
+        console.log(`缓存显示ID=${id}的剪贴板已过期`);
+        return { expired: true };
+      }
+      return cachedData as Record<string, unknown> | null;
     }
     
-    console.log(`从服务器获取剪贴板内容 (ID=${id})...`);
-    
-    // 添加随机参数避免缓存
-    const timestamp = Date.now();
+    const timestamp = Date.now(); // 添加时间戳防止缓存
     const response = await fetch(`/api/clipboard?id=${encodeURIComponent(id)}&_t=${timestamp}`, {
-      method: 'GET',
+      cache: 'no-store',
       headers: {
-        // 添加防缓存头
         'Cache-Control': 'no-cache, no-store',
         'Pragma': 'no-cache',
       },
-      // 确保不使用浏览器缓存
-      cache: 'no-store',
     });
     
-    const data = await response.json();
-    
     if (!response.ok) {
-      console.error('从服务器获取剪贴板内容失败:', response.statusText);
+      console.error(`获取剪贴板内容失败: HTTP ${response.status} ${response.statusText}`);
+      // 缓存失败结果
+      saveToCache(cacheKey, null);
       return null;
     }
     
-    if (!data.exists) {
-      // 检查是否是因为过期
-      if (data.expired) {
-        console.log(`ID=${id}的剪贴板已过期`);
-        // 缓存过期结果
-        saveToCache(cacheKey, { expired: true });
-        return { expired: true };
-      }
+    const data = await response.json();
+    
+    // 检查是否过期
+    if (data.expired === true) {
+      console.log(`ID=${id}的剪贴板已过期`);
       
+      // 缓存过期状态，但使用较短的过期时间
+      saveToCache(cacheKey, { expired: true });
+      
+      // 返回过期标志
+      return { expired: true };
+    }
+    
+    // 检查是否存在
+    if (!data.exists || !data.clipboard) {
       console.log(`ID=${id}的剪贴板在服务器上不存在`);
       // 缓存结果
       saveToCache(cacheKey, null);
@@ -259,23 +265,58 @@ export async function getClipboardFromServer(id: string): Promise<Record<string,
  * @param id 剪贴板ID
  * @param content 内容
  * @param isProtected 是否密码保护
- * @param expirationHours 过期小时数
+ * @param expirationTime 过期时间值（可以是小时，也可以是分钟带单位如"5m"）
  * @returns 是否成功
  */
 export async function saveClipboardToServer(
   id: string, 
   content: string, 
   isProtected: boolean = false, 
-  expirationHours: number = 24
+  expirationTime: string | number = 24
 ): Promise<boolean> {
   try {
-    console.log(`正在将剪贴板内容保存到服务器 (ID=${id})...`);
-    console.log(`保存前参数检查: isProtected=${isProtected} (${typeof isProtected})`);
+    console.log(`【API调用】正在将剪贴板内容保存到服务器 (ID=${id})...`);
+    console.log(`【API调用】保存前参数检查: `);
+    console.log(`【API调用】- isProtected = ${isProtected} (${typeof isProtected})`);
+    console.log(`【API调用】- expirationTime = ${expirationTime} (${typeof expirationTime})`);
     
     // 将布尔值转换为数字表示
     const protectedValue = isProtected ? 1 : 0;
     
-    console.log(`发送到服务器的参数: id=${id}, content长度=${content.length}, isProtected=${protectedValue}, expirationHours=${expirationHours}`);
+    // 解析过期时间，支持分钟单位格式
+    let finalExpirationTime: string | number = expirationTime;
+    
+    // 记录原始参数值用于日志
+    const originalExpirationTime = expirationTime;
+    
+    // 如果是带单位的字符串形式
+    if (typeof expirationTime === 'string' && expirationTime.endsWith('m')) {
+      // 保持原样，API会解析分钟单位
+      console.log(`【API调用】检测到分钟单位格式: ${expirationTime}`);
+    } else {
+      // 如果是数字或数字字符串，视为小时
+      const hours = typeof expirationTime === 'string' ? parseFloat(expirationTime) : expirationTime;
+      // 转换为分钟单位字符串
+      finalExpirationTime = `${hours * 60}m`;
+      console.log(`【API调用】小时值(${hours})已转换为分钟格式: ${finalExpirationTime}`);
+    }
+    
+    console.log(`【API调用】发送到服务器的参数:`);
+    console.log(`【API调用】- id = ${id}`);
+    console.log(`【API调用】- content长度 = ${content.length} 字符`);
+    console.log(`【API调用】- isProtected = ${protectedValue} (${typeof protectedValue})`);
+    console.log(`【API调用】- expirationTime(原始) = ${originalExpirationTime}`);
+    console.log(`【API调用】- expirationHours(发送) = ${finalExpirationTime}`);
+    
+    // 构建请求体
+    const requestBody = { 
+      id, 
+      content, 
+      isProtected: protectedValue, 
+      expirationHours: finalExpirationTime // 服务器端使用这个参数名
+    };
+    
+    console.log(`【API调用】完整的请求体:`, JSON.stringify(requestBody, null, 2));
     
     const response = await fetch('/api/clipboard', {
       method: 'POST',
@@ -284,40 +325,38 @@ export async function saveClipboardToServer(
         'Cache-Control': 'no-cache, no-store',
         'Pragma': 'no-cache',
       },
-      body: JSON.stringify({ 
-        id, 
-        content, 
-        isProtected: protectedValue, 
-        expirationHours 
-      }),
+      body: JSON.stringify(requestBody),
       cache: 'no-store',
     });
     
     const data = await response.json();
     
     if (!response.ok || !data.success) {
-      console.error('服务器保存剪贴板内容失败:', data.error || response.statusText);
+      console.error('【API调用失败】服务器保存剪贴板内容失败:', data.error || response.statusText);
       return false;
     }
     
     // 清除此ID的缓存
     invalidateCache(id);
     
-    console.log(`剪贴板内容已成功保存到服务器 (ID=${id})`);
+    console.log(`【API调用成功】剪贴板内容已成功保存到服务器 (ID=${id})`);
     
     // 打印服务器返回的数据
     if (data.clipboard) {
-      console.log(`服务器返回的剪贴板数据:`, {
+      console.log(`【API调用】服务器返回的剪贴板数据:`, {
         id: id,
         isProtected: data.clipboard.isProtected,
         createdAt: new Date(data.clipboard.createdAt).toLocaleString(),
-        expiresAt: new Date(data.clipboard.expiresAt).toLocaleString()
+        expiresAt: new Date(data.clipboard.expiresAt).toLocaleString(),
+        毫秒差: data.clipboard.expiresAt - data.clipboard.createdAt,
+        小时差: (data.clipboard.expiresAt - data.clipboard.createdAt) / (3600 * 1000),
+        分钟差: (data.clipboard.expiresAt - data.clipboard.createdAt) / (60 * 1000)
       });
     }
     
     return true;
   } catch (error) {
-    console.error('服务器保存剪贴板内容出错:', error);
+    console.error('【API调用错误】服务器保存剪贴板内容出错:', error);
     return false;
   }
 }

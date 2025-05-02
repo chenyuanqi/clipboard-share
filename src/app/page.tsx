@@ -68,6 +68,21 @@ export default function Home() {
   // 使用指定路径创建剪贴板
   const createClipboardWithPath = async (path: string) => {
     try {
+      // 统一使用分钟单位
+      let expirationMinutes: number | string;
+      
+      // 检查是否已经是带单位的分钟格式
+      if (typeof expiration === 'string' && expiration.endsWith('m')) {
+        // 直接使用带单位的值
+        expirationMinutes = expiration;
+        console.log(`【传参分析】直接使用分钟单位：${expiration}`);
+      } else {
+        // 将小时转为分钟
+        const hours = parseFloat(expiration);
+        expirationMinutes = `${hours * 60}m`;
+        console.log(`【传参分析】小时(${hours})转为分钟：${expirationMinutes}`);
+      }
+      
       // 如果设置了密码，尝试保存到服务器和本地
       if (password) {
         console.log(`准备创建有密码保护的剪贴板：路径=${path}, 密码=${password?'已设置':'未设置'}`);
@@ -77,32 +92,56 @@ export default function Home() {
         saveClipboardPassword(path, password);
         
         // 添加到历史记录
-        addToHistory(path, "", true, Date.now(), Date.now() + parseInt(expiration, 10) * 60 * 60 * 1000);
+        // 使用正确的过期时间计算
+        let msToExpire: number;
+        if (typeof expirationMinutes === 'string' && expirationMinutes.endsWith('m')) {
+          const mins = parseFloat(expirationMinutes);
+          msToExpire = mins * 60 * 1000;
+        } else {
+          const hours = parseFloat(expiration);
+          msToExpire = hours * 60 * 60 * 1000;
+        }
+        
+        addToHistory(path, "", true, Date.now(), Date.now() + msToExpire);
         
         // 创建但需要验证密码才能访问
-        const url = `/clipboard/${path}?new=true&protected=true&exp=${expiration}`;
+        // 使用原始参数格式
+        const url = `/clipboard/${path}?new=true&protected=true&exp=${expirationMinutes}`;
         console.log(`【详细日志】准备跳转到受保护的剪贴板页面:`);
         console.log(`【详细日志】- 完整URL = ${url}`);
         console.log(`【详细日志】- URL参数分析:`);
         console.log(`【详细日志】  - path = ${path}`);
         console.log(`【详细日志】  - new = true`);
         console.log(`【详细日志】  - protected = true`);
-        console.log(`【详细日志】  - exp = ${expiration}`);
+        console.log(`【详细日志】  - exp = ${expirationMinutes}`);
+        console.log(`【详细日志】  - 原始expiration = ${expiration}`);
         router.push(url);
       } else {
         console.log(`准备创建无密码保护的剪贴板：路径=${path}`);
         
         // 添加到历史记录
-        addToHistory(path, "", false, Date.now(), Date.now() + parseInt(expiration, 10) * 60 * 60 * 1000);
+        // 使用正确的过期时间计算
+        let msToExpire: number;
+        if (typeof expirationMinutes === 'string' && expirationMinutes.endsWith('m')) {
+          const mins = parseFloat(expirationMinutes);
+          msToExpire = mins * 60 * 1000;
+        } else {
+          const hours = parseFloat(expiration);
+          msToExpire = hours * 60 * 60 * 1000;
+        }
+        
+        addToHistory(path, "", false, Date.now(), Date.now() + msToExpire);
         
         // 无密码剪贴板，直接进入并编辑
-        const url = `/clipboard/${path}?new=true&exp=${expiration}&direct=true`;
+        // 使用原始参数格式
+        const url = `/clipboard/${path}?new=true&exp=${expirationMinutes}&direct=true`;
         console.log(`【详细日志】准备跳转到无保护的剪贴板页面:`);
         console.log(`【详细日志】- 完整URL = ${url}`);
         console.log(`【详细日志】- URL参数分析:`);
         console.log(`【详细日志】  - path = ${path}`);
         console.log(`【详细日志】  - new = true`);
-        console.log(`【详细日志】  - exp = ${expiration}`);
+        console.log(`【详细日志】  - exp = ${expirationMinutes}`);
+        console.log(`【详细日志】  - 原始expiration = ${expiration}`);
         console.log(`【详细日志】  - direct = true`);
         router.push(url);
       }
@@ -118,7 +157,7 @@ export default function Home() {
       console.log(`【详细日志】开始创建剪贴板:`);
       console.log(`【详细日志】- 自定义路径 = ${customPath.trim() || '(未设置)'}`);
       console.log(`【详细日志】- 密码保护 = ${password ? '是' : '否'}`);
-      console.log(`【详细日志】- 过期时间 = ${expiration}小时`);
+      console.log(`【详细日志】- 过期时间 = ${expiration}`);
       
       // 如果指定了自定义路径，先检查是否已存在
       if (customPath.trim()) {
@@ -230,6 +269,8 @@ export default function Home() {
                 onChange={(e) => setExpiration(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white transition-colors"
               >
+                <option value="5m">5分钟</option>
+                <option value="30m">30分钟</option>
                 <option value="1">1小时</option>
                 <option value="12">12小时</option>
                 <option value="24">24小时</option>
@@ -300,8 +341,8 @@ export default function Home() {
         </div>
       </main>
 
-      <footer className="p-4 sm:p-6 border-t border-gray-200 dark:border-gray-800 text-center text-gray-600 dark:text-gray-400">
-        <p>© {new Date().getFullYear()} 云剪 - 安全地分享您的内容</p>
+      <footer className="mt-auto p-8 text-center text-gray-600 dark:text-gray-400">
+        <p>© 2024 云剪 - 安全地分享您的内容</p>
       </footer>
       
       {/* 路径已存在的确认对话框 */}

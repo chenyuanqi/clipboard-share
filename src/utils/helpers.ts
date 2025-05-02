@@ -11,11 +11,93 @@ export function generateUniqueId(): string {
 }
 
 /**
- * 获取当前中国时区的时间戳（毫秒）
- * @returns 当前中国时区的时间戳
+ * 获取当前中国时区（UTC+8）的时间戳（毫秒）
+ * @returns 中国时区的当前时间戳
  */
 export function getChinaTimeMs(): number {
-  return Date.now();
+  // 方法1：使用标准的Date对象方法
+  // 获取当前UTC时间毫秒数
+  const now = new Date();
+  
+  // 创建一个表示中国时间的日期对象
+  const options: Intl.DateTimeFormatOptions = { 
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false
+  };
+  
+  // 格式化为中国时区的日期字符串
+  const chinaTimeStr = now.toLocaleString('zh-CN', options);
+  
+  // 将格式化的字符串解析回Date对象
+  // 格式通常为：2023/5/8 14:30:45
+  const [datePart, timePart] = chinaTimeStr.split(' ');
+  const [year, month, day] = datePart.split('/').map(Number);
+  const [hour, minute, second] = timePart.split(':').map(Number);
+  
+  // 注意：月份需要减1，因为Date对象的月份是从0开始计数的
+  const chinaDate = new Date(year, month - 1, day, hour, minute, second);
+  
+  console.log(`[getChinaTimeMs] 当前中国时间: ${chinaTimeStr} => ${chinaDate.toISOString()} (${chinaDate.getTime()})`);
+  
+  return chinaDate.getTime();
+}
+
+/**
+ * 将任何时间戳转换为中国时区的时间戳
+ * @param timestamp UTC时间戳
+ * @returns 转换为中国时区的时间戳
+ */
+export function convertToChinaTime(timestamp: number): number {
+  // 创建一个表示给定时间戳的Date对象
+  const date = new Date(timestamp);
+  
+  // 获取其在中国时区的表示
+  const options: Intl.DateTimeFormatOptions = { 
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false,
+    // 为了更高精度，添加毫秒
+    fractionalSecondDigits: 3
+  };
+  
+  // 格式化为中国时区的日期字符串
+  const chinaTimeStr = date.toLocaleString('zh-CN', options);
+  
+  // 处理格式化字符串，包括毫秒（如果有）
+  const [datePart, timeWithMs] = chinaTimeStr.split(' ');
+  
+  // 分割时间部分和毫秒部分
+  let timePart, msPart = 0;
+  if (timeWithMs.includes('.')) {
+    const [time, ms] = timeWithMs.split('.');
+    timePart = time;
+    msPart = parseInt(ms);
+  } else {
+    timePart = timeWithMs;
+  }
+  
+  // 解析日期和时间
+  const [year, month, day] = datePart.split('/').map(Number);
+  const [hour, minute, second] = timePart.split(':').map(Number);
+  
+  // 创建中国时区的日期对象
+  const chinaDate = new Date(year, month - 1, day, hour, minute, second, msPart);
+  
+  console.log(`[convertToChinaTime] 输入时间戳: ${timestamp} => ${date.toISOString()}`);
+  console.log(`[convertToChinaTime] 中国时间: ${chinaTimeStr} => ${chinaDate.toISOString()} (${chinaDate.getTime()})`);
+  
+  return chinaDate.getTime();
 }
 
 /**
@@ -301,19 +383,33 @@ export async function decryptText(encryptedText: string, password: string): Prom
 
 /**
  * 计算过期时间
- * @param hours 小时数
- * @param createdAt 创建时间（可选），如果不提供则使用当前时间
+ * @param hours 小时数（可以是小数，如0.0833表示5分钟，0.5表示30分钟）
+ * @param createdAt 创建时间（可选），如果不提供则使用当前中国时间
  * @returns 过期的时间戳（毫秒）
  */
 export function calculateExpirationTime(hours: number, createdAt?: number): number {
-  // 使用创建时间或当前时间作为基准
-  const baseTime = createdAt || Date.now();
+  // 使用创建时间或当前中国时间作为基准
+  const baseTime = createdAt || getChinaTimeMs();
   const millisecondsToExpire = Math.floor(hours * 3600 * 1000); // 每小时3600秒，每秒1000毫秒
+  
+  // 直接添加毫秒数
   const expiresAt = baseTime + millisecondsToExpire;
   
-  console.log(`[calculateExpirationTime] 基准时间: ${formatChinaTime(baseTime)}`);
-  console.log(`[calculateExpirationTime] 过期时间: ${formatChinaTime(expiresAt)}`);
-  console.log(`[calculateExpirationTime] 设置过期时间: ${hours}小时，共${millisecondsToExpire}毫秒`);
+  // 计算分钟和秒，用于日志显示
+  const minutes = Math.floor(hours * 60);
+  const seconds = Math.floor((hours * 60 * 60) % 60);
+  
+  console.log(`[calculateExpirationTime] 基准时间: ${formatChinaTime(baseTime)} (${baseTime})`);
+  console.log(`[calculateExpirationTime] 过期时间: ${formatChinaTime(expiresAt)} (${expiresAt})`);
+  console.log(`[calculateExpirationTime] 基准时间时间戳: ${baseTime}`);
+  console.log(`[calculateExpirationTime] 过期时间时间戳: ${expiresAt}`);
+  console.log(`[calculateExpirationTime] 毫秒差: ${millisecondsToExpire}`);
+  
+  if (hours >= 1) {
+    console.log(`[calculateExpirationTime] 设置过期时间: ${hours}小时 (${minutes}分钟)，共${millisecondsToExpire}毫秒`);
+  } else {
+    console.log(`[calculateExpirationTime] 设置过期时间: ${minutes}分钟${seconds > 0 ? seconds + '秒' : ''}，共${millisecondsToExpire}毫秒`);
+  }
   
   return expiresAt;
 }
@@ -324,7 +420,18 @@ export function calculateExpirationTime(hours: number, createdAt?: number): numb
  * @returns 是否已过期
  */
 export function isExpired(expirationTime: number): boolean {
-  return Date.now() > expirationTime;
+  // 获取当前中国时区时间
+  const now = getChinaTimeMs();
+  
+  // 对比时间戳判断是否过期
+  const isExp = now > expirationTime;
+  
+  console.log(`[isExpired] 当前中国时间戳: ${now} (${formatChinaTime(now)})`);
+  console.log(`[isExpired] 过期时间戳: ${expirationTime} (${formatChinaTime(expirationTime)})`);
+  console.log(`[isExpired] 时间差(毫秒): ${expirationTime - now}`);
+  console.log(`[isExpired] 是否过期: ${isExp}`);
+  
+  return isExp;
 }
 
 /**
@@ -333,20 +440,33 @@ export function isExpired(expirationTime: number): boolean {
  * @returns 格式化的过期时间字符串
  */
 export function formatExpirationTime(expirationTime: number): string {
-  const now = Date.now();
+  // 获取当前中国时区时间
+  const now = getChinaTimeMs();
+  // 计算时间差（毫秒）
   const diff = expirationTime - now;
+  
+  console.log(`[formatExpirationTime] 当前中国时间戳: ${now} (${formatChinaTime(now)})`);
+  console.log(`[formatExpirationTime] 过期时间戳: ${expirationTime} (${formatChinaTime(expirationTime)})`);
+  console.log(`[formatExpirationTime] 时间差(毫秒): ${diff}`);
   
   if (diff <= 0) {
     return '已过期';
   }
   
+  // 计算小时、分钟和秒
   const hours = Math.floor(diff / (60 * 60 * 1000));
   const minutes = Math.floor((diff % (60 * 60 * 1000)) / (60 * 1000));
+  const seconds = Math.floor((diff % (60 * 1000)) / 1000);
   
+  console.log(`[formatExpirationTime] 解析后时间差: ${hours}小时 ${minutes}分钟 ${seconds}秒`);
+  
+  // 根据时间差范围返回不同的格式化字符串
   if (hours > 0) {
-    return `${hours}小时${minutes}分钟后过期`;
+    return `${hours}小时${minutes > 0 ? minutes + '分钟' : ''}后过期`;
+  } else if (minutes > 0) {
+    return `${minutes}分钟${seconds > 0 ? seconds + '秒' : ''}后过期`;
   } else {
-    return `${minutes}分钟后过期`;
+    return `${seconds}秒后过期`;
   }
 }
 

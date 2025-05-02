@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { formatChinaTime } from '@/utils/helpers';
+import { formatChinaTime, getChinaTimeMs, convertToChinaTime } from '@/utils/helpers';
 
 // 存储剪贴板内容的文件路径
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -98,7 +98,9 @@ function saveAllClipboards(clipboards: Record<string, Clipboard>): void {
 // 清理所有过期的剪贴板
 function cleanupExpiredClipboards(additionalHours: number = 0): string[] {
   try {
-    const now = Date.now();
+    const now = getChinaTimeMs();
+    console.log(`[内部清理] 当前中国时间: ${formatChinaTime(now)} (${now})`);
+    
     const clipboards = getAllClipboards();
     const expiredIds: string[] = [];
     let hasExpired = false;
@@ -196,15 +198,19 @@ export async function GET(request: Request) {
     }
     
     // 检查是否过期
-    if (clipboard.expiresAt && clipboard.expiresAt < Date.now()) {
-      console.log(`ID=${id}的剪贴板已过期`);
-      
-      // 删除过期的剪贴板
-      delete clipboards[id];
-      saveAllClipboards(clipboards);
-      
-      // 返回过期状态而不是不存在，这样前端可以区分这两种情况
-      return NextResponse.json({ exists: false, expired: true }, { status: 200 });
+    if (clipboard.expiresAt) {
+      const now = getChinaTimeMs();
+      if (clipboard.expiresAt < now) {
+        console.log(`ID=${id}的剪贴板已过期，过期时间: ${formatChinaTime(clipboard.expiresAt)}`);
+        console.log(`当前中国时间: ${formatChinaTime(now)}`);
+        
+        // 删除过期的剪贴板
+        delete clipboards[id];
+        saveAllClipboards(clipboards);
+        
+        // 返回过期状态而不是不存在，这样前端可以区分这两种情况
+        return NextResponse.json({ exists: false, expired: true }, { status: 200 });
+      }
     }
     
     console.log(`返回ID=${id}的剪贴板，过期时间: ${new Date(clipboard.expiresAt).toISOString()}`);
@@ -230,17 +236,44 @@ export async function POST(request: Request) {
     const data = await request.json();
     const { id, content, isProtected, expirationHours } = data;
     
+    console.log(`【服务器API】收到POST请求，ID=${id}`);
+    console.log(`【服务器API】请求参数:`);
+    console.log(`【服务器API】- id = ${id}`);
+    console.log(`【服务器API】- isProtected = ${isProtected} (${typeof isProtected})`);
+    console.log(`【服务器API】- expirationHours = ${expirationHours} (${typeof expirationHours})`);
+    
     if (!id) {
-      console.log('POST请求: 未提供ID参数');
+      console.log('【服务器API错误】POST请求未提供ID参数');
       return NextResponse.json({ error: '未提供ID参数' }, { status: 400 });
     }
     
-    console.log(`准备创建/更新ID=${id}的剪贴板，过期时间：${expirationHours}小时`);
+    // 统一使用分钟为单位计算时间
+    // 解析过期时间（支持带单位的格式）
+    let expirationMinutes: number;
     
-    const now = Date.now();
-    // 确保精确计算过期时间，避免舍入误差
-    const hoursToExpire = expirationHours || 24; // 默认24小时
-    const expiresAt = now + (hoursToExpire * 60 * 60 * 1000);
+    if (typeof expirationHours === 'string' && expirationHours.endsWith('m')) {
+      // 如果直接提供了分钟数（例如 "5m"）
+      expirationMinutes = parseFloat(expirationHours);
+      console.log(`【服务器API】检测到分钟单位: ${expirationHours}`);
+      console.log(`【服务器API】解析结果: ${expirationMinutes} 分钟 (${expirationMinutes/60} 小时)`);
+    } else {
+      // 默认情况: 转换小时为分钟
+      const hours = parseFloat(expirationHours) || 24; // 默认24小时
+      expirationMinutes = hours * 60;
+      console.log(`【服务器API】检测到小时单位: ${expirationHours}`);
+      console.log(`【服务器API】解析结果: ${hours} 小时 (${expirationMinutes} 分钟)`);
+    }
+    
+    // 计算毫秒数
+    const millisecondsToExpire = expirationMinutes * 60 * 1000;
+    
+    // 使用中国时区的当前时间
+    const now = getChinaTimeMs();
+    const expiresAt = now + millisecondsToExpire;
+    
+    console.log(`【服务器API】当前中国时间: ${formatChinaTime(now)} (${now})`);
+    console.log(`【服务器API】过期时间: ${formatChinaTime(expiresAt)} (${expiresAt})`);
+    console.log(`【服务器API】过期时长: ${expirationMinutes}分钟 (${millisecondsToExpire}毫秒)`);
     
     // 获取已有剪贴板数据
     const clipboards = getAllClipboards();
@@ -248,10 +281,12 @@ export async function POST(request: Request) {
     // 检查是否已存在
     const existingClipboard = clipboards[id];
     
-    console.log(`【详细日志】详细信息:`);
-    console.log(`【详细日志】- 是否已存在的剪贴板: ${existingClipboard ? '是' : '否'}`);
-    console.log(`【详细日志】- 当前时间: ${new Date(now).toLocaleString()}`);
-    console.log(`【详细日志】- 过期时间: ${new Date(expiresAt).toLocaleString()}`);
+    console.log(`【服务器API】【详细日志】详细信息:`);
+    console.log(`【服务器API】【详细日志】- 是否已存在的剪贴板: ${existingClipboard ? '是' : '否'}`);
+    console.log(`【服务器API】【详细日志】- 当前时间: ${new Date(now).toLocaleString()}`);
+    console.log(`【服务器API】【详细日志】- 过期时间: ${new Date(expiresAt).toLocaleString()}`);
+    console.log(`【服务器API】【详细日志】- 过期时长: ${expirationMinutes}分钟 (${expirationMinutes/60}小时)`);
+    console.log(`【服务器API】【详细日志】- 毫秒差: ${millisecondsToExpire}`);
     
     // 创建或更新剪贴板数据
     const clipboard: Clipboard = {
@@ -263,12 +298,12 @@ export async function POST(request: Request) {
       lastModified: now
     };
     
-    console.log(`【详细日志】最终保存的剪贴板数据:`);
-    console.log(`【详细日志】- id = ${id}`);
-    console.log(`【详细日志】- isProtected = ${clipboard.isProtected} (${typeof clipboard.isProtected})`);
-    console.log(`【详细日志】- createdAt = ${new Date(clipboard.createdAt).toLocaleString()}`);
-    console.log(`【详细日志】- expiresAt = ${new Date(clipboard.expiresAt).toLocaleString()}`);
-    console.log(`【详细日志】- lastModified = ${new Date(clipboard.lastModified).toLocaleString()}`);
+    console.log(`【服务器API】【详细日志】最终保存的剪贴板数据:`);
+    console.log(`【服务器API】【详细日志】- id = ${id}`);
+    console.log(`【服务器API】【详细日志】- isProtected = ${clipboard.isProtected} (${typeof clipboard.isProtected})`);
+    console.log(`【服务器API】【详细日志】- createdAt = ${new Date(clipboard.createdAt).toLocaleString()}`);
+    console.log(`【服务器API】【详细日志】- expiresAt = ${new Date(clipboard.expiresAt).toLocaleString()}`);
+    console.log(`【服务器API】【详细日志】- lastModified = ${new Date(clipboard.lastModified).toLocaleString()}`);
     
     clipboards[id] = clipboard;
     
@@ -276,13 +311,13 @@ export async function POST(request: Request) {
     
     console.log(`ID=${id}的剪贴板已${existingClipboard ? '更新' : '创建'}，将在${formatChinaTime(expiresAt)}过期`);
     
-    console.log(`【详细日志】准备返回响应:`);
-    console.log(`【详细日志】- success = true`);
-    console.log(`【详细日志】- isUpdate = ${existingClipboard ? true : false}`);
-    console.log(`【详细日志】- 返回的剪贴板对象:`);
-    console.log(`【详细日志】  - isProtected = ${clipboard.isProtected} (${typeof clipboard.isProtected})`);
-    console.log(`【详细日志】  - createdAt = ${formatChinaTime(clipboard.createdAt)}`);
-    console.log(`【详细日志】  - expiresAt = ${formatChinaTime(clipboard.expiresAt)}`);
+    console.log(`【服务器API】【详细日志】准备返回响应:`);
+    console.log(`【服务器API】【详细日志】- success = true`);
+    console.log(`【服务器API】【详细日志】- isUpdate = ${existingClipboard ? true : false}`);
+    console.log(`【服务器API】【详细日志】- 返回的剪贴板对象:`);
+    console.log(`【服务器API】【详细日志】  - isProtected = ${clipboard.isProtected} (${typeof clipboard.isProtected})`);
+    console.log(`【服务器API】【详细日志】  - createdAt = ${formatChinaTime(clipboard.createdAt)}`);
+    console.log(`【服务器API】【详细日志】  - expiresAt = ${formatChinaTime(clipboard.expiresAt)}`);
     
     const response = { 
       success: true, 
