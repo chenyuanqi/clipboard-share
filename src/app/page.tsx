@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { generateUniqueId } from "@/utils/helpers";
@@ -17,9 +17,23 @@ interface AuthData {
   [key: string]: string;
 }
 
+// 创建一个处理URL参数的子组件
+function SearchParamsHandler({ onCloneId }: { onCloneId: (id: string | null) => void }) {
+  const searchParams = useSearchParams();
+  
+  useEffect(() => {
+    const cloneId = searchParams.get('clone');
+    if (cloneId) {
+      console.log(`从过期剪贴板页面获取到路径: ${cloneId}`);
+      onCloneId(cloneId);
+    }
+  }, [searchParams, onCloneId]);
+  
+  return null; // 这个组件不需要渲染任何内容
+}
+
 export default function Home() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [customPath, setCustomPath] = useState("");
   const [password, setPassword] = useState("");
   const [expiration, setExpiration] = useState("24"); // 默认24小时
@@ -33,19 +47,17 @@ export default function Home() {
     action: ""
   });
 
-  // 从URL获取clone参数并设置到自定义路径输入框
-  useEffect(() => {
-    const cloneId = searchParams.get('clone');
+  // 处理从URL获取的clone参数
+  const handleCloneId = (cloneId: string | null) => {
     if (cloneId) {
       setCustomPath(cloneId);
-      console.log(`从过期剪贴板页面获取到路径: ${cloneId}`);
       
       // 检查路径是否已存在
       if (checkPathExists(cloneId)) {
         setPathError("此路径已被使用，请更换其他路径或直接查看已有内容");
       }
     }
-  }, [searchParams]);
+  };
 
   // 检查自定义路径是否已存在
   const checkPathExists = (path: string) => {
@@ -203,6 +215,11 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+      {/* 使用Suspense包裹处理URL参数的组件 */}
+      <Suspense fallback={<div className="sr-only">加载URL参数...</div>}>
+        <SearchParamsHandler onCloneId={handleCloneId} />
+      </Suspense>
+      
       <header className="w-full p-4 sm:p-6 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
