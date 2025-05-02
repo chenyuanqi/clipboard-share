@@ -6,7 +6,19 @@ module.exports = {
     "./src/components/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      animation: {
+        'bounce-slow': 'bounce 3s linear infinite',
+        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+      },
+      transitionProperty: {
+        'height': 'height',
+        'spacing': 'margin, padding',
+      },
+      transitionDuration: {
+        '2000': '2000ms',
+      },
+    },
   },
   plugins: [],
   darkMode: 'class',

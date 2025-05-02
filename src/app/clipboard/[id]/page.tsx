@@ -253,23 +253,53 @@ export default function ClipboardPage() {
     deleteClipboard(clipboardId);
     
     // 删除服务器上的数据
-    await deleteClipboardFromServer(clipboardId);
-    
-    // 清除备份数据
     try {
+      await deleteClipboardFromServer(clipboardId);
+      console.log(`成功从服务器删除剪贴板: ${clipboardId}`);
+    } catch (error) {
+      console.error(`删除服务器剪贴板数据失败: ${clipboardId}`, error);
+    }
+    
+    // 清除所有备份数据
+    try {
+      // 添加所有可能的备份键，确保完全清理
       const backupKeys = [
         `clipboard-content-${clipboardId}`,
         `clipboard-content-backup-${clipboardId}`,
         `clipboard-${clipboardId}`,
-        `clipboard-pwd-${clipboardId}`
+        `clipboard-pwd-${clipboardId}`,
+        `clipboard-session-${clipboardId}`,
+        `clipboard-attempts-${clipboardId}`,
+        `clipboard-block-${clipboardId}`
       ];
       
       backupKeys.forEach(key => {
-        if (localStorage.getItem(key)) {
-          localStorage.removeItem(key);
-          console.log(`已删除备份: ${key}`);
+        try {
+          if (localStorage.getItem(key)) {
+            localStorage.removeItem(key);
+            console.log(`已删除本地备份: ${key}`);
+          }
+        } catch (e) {
+          console.error(`删除本地备份失败: ${key}`, e);
         }
       });
+      
+      // 清理会话存储的授权记录
+      try {
+        const sessionAuth = sessionStorage.getItem(SESSION_AUTHORIZED_KEY);
+        if (sessionAuth) {
+          const authData = JSON.parse(sessionAuth) as AuthData;
+          if (authData[clipboardId]) {
+            delete authData[clipboardId];
+            sessionStorage.setItem(SESSION_AUTHORIZED_KEY, JSON.stringify(authData));
+            console.log(`已删除会话存储中的授权记录: ${clipboardId}`);
+          }
+        }
+      } catch (sessionError) {
+        console.error(`清理会话存储授权记录失败: ${clipboardId}`, sessionError);
+      }
+      
+      console.log(`剪贴板 ${clipboardId} 的所有数据已被清理`);
     } catch (error) {
       console.error("删除备份失败:", error);
     }
@@ -967,9 +997,32 @@ export default function ClipboardPage() {
         
         // 首先检查剪贴板是否过期，无论是否为新剪贴板
         const isExpiredCheck = await checkAndCleanExpiredClipboard(id.toString());
-        if (isExpiredCheck) {
-          console.log(`剪贴板 ${id} 已过期，不会创建新剪贴板`);
+
+        // 如果是新剪贴板且是通过使用已过期的剪贴板ID创建的，确保彻底清理旧数据
+        if (isNewClipboard) {
+          // 无论之前剪贴板是否过期，都彻底清理所有数据
+          console.log(`创建新剪贴板，确保旧数据被完全清理: ID=${id}`);
           await cleanupExpiredClipboardData(id.toString());
+          
+          // 添加安全检查：如果URL中没有特定的参数组合，可能是用户直接修改URL尝试创建新剪贴板
+          // 例如，应该同时有new=true和protected参数，以及有效期参数
+          const hasRequiredParams = 
+            searchParams.has("new") && 
+            searchParams.has("protected") && 
+            searchParams.has("exp");
+            
+          if (!hasRequiredParams) {
+            console.log(`安全警告：尝试创建新剪贴板但缺少必要参数 ID=${id}`);
+            console.log(`参数: new=${searchParams.get("new")}, protected=${searchParams.get("protected")}, exp=${searchParams.get("exp")}`);
+            // 重定向到首页而不是创建新剪贴板
+            router.push("/");
+            return;
+          }
+        }
+        
+        // 如果检测到已过期且不是创建新剪贴板，显示过期页面
+        if (isExpiredCheck && !isNewClipboard) {
+          console.log(`剪贴板 ${id} 已过期，不会创建新剪贴板`);
           setIsLoading(false);
           setIsExpiredClipboard(true);
           return;
@@ -978,74 +1031,6 @@ export default function ClipboardPage() {
         // 如果是新剪贴板
         if (isNewClipboard) {
           console.log("加载新创建的剪贴板");
-          
-          // 检查剪贴板是否已经存在 (防止重复创建)
-          const existingClipboard = getClipboard(id.toString());
-          if (existingClipboard) {
-            // 检查是否过期 (再次检查确保不会使用过期的剪贴板)
-            if (existingClipboard.expiresAt && isExpired(existingClipboard.expiresAt)) {
-              console.log("本地剪贴板数据已过期");
-              await cleanupExpiredClipboardData(id.toString());
-              
-              // 不是404，而是显示过期页面
-              setIsLoading(false);
-              setIsExpiredClipboard(true);
-              return;
-            }
-            
-            console.log("剪贴板已存在，不再重新创建");
-            // 如果剪贴板已存在，只更新URL (移除新建参数)
-            const url = new URL(window.location.href);
-            url.searchParams.delete('new');
-            url.searchParams.delete('exp');
-            url.searchParams.delete('protected');
-            window.history.replaceState({}, '', url.toString());
-            
-            // 然后像加载已有剪贴板一样处理
-            await loadExistingClipboard();
-            return;
-          }
-          
-          // 检查是否有备份内容可以恢复
-          let hasBackupContent = false;
-          let backupContent = "";
-          
-          try {
-            // 检查可能的备份位置
-            const backupKeys = [
-              `clipboard-content-${id}`,
-              `clipboard-content-backup-${id}`,
-              `clipboard-${id}`
-            ];
-            
-            for (const key of backupKeys) {
-              const data = localStorage.getItem(key);
-              if (data) {
-                if (key === `clipboard-${id}`) {
-                  // 对象格式备份
-                  try {
-                    const parsed = JSON.parse(data);
-                    if (parsed && parsed.content) {
-                      backupContent = parsed.content;
-                      hasBackupContent = true;
-                      console.log(`找到对象格式的备份内容，长度: ${backupContent.length}`);
-                      break;
-                    }
-                  } catch (e) {
-                    console.error("解析对象备份失败:", e);
-                  }
-                } else {
-                  // 字符串格式备份
-                  backupContent = data;
-                  hasBackupContent = true;
-                  console.log(`找到字符串格式的备份内容，长度: ${backupContent.length}`);
-                  break;
-                }
-              }
-            }
-          } catch (error) {
-            console.error("检查备份内容失败:", error);
-          }
           
           // 从URL参数中获取密码
           const urlPassword = searchParams.get("password");
@@ -1064,12 +1049,12 @@ export default function ClipboardPage() {
           console.log(`【详细日志】- expirationHours = ${expirationHours}`);
           console.log(`【详细日志】- 创建时间 = ${new Date(createdAt).toLocaleString()}`);
           console.log(`【详细日志】- 过期时间 = ${new Date(expiresAt).toLocaleString()}`);
-          console.log(`【详细日志】- 是否有备份内容 = ${hasBackupContent}`);
           
           // 确保这里传递的isProtected与URL参数一致
           const protectedValue = searchParams.get("protected") === "true";
-          const initialContent = hasBackupContent ? backupContent : "";
-          const newClipboard = createClipboard(id.toString(), initialContent, protectedValue, expirationHours, createdAt);
+          
+          // 创建全新的空剪贴板，不使用任何备份内容
+          const newClipboard = createClipboard(id.toString(), "", protectedValue, expirationHours, createdAt);
           
           console.log(`【详细日志】剪贴板创建结果:`);
           console.log(`【详细日志】- ID = ${newClipboard.id}`);
@@ -1082,23 +1067,10 @@ export default function ClipboardPage() {
           // 立即将新剪贴板保存到服务器
           try {
             console.log(`【详细日志】将新创建的剪贴板保存到服务器...`);
-            let initialServerContent = initialContent;
-            
-            // 如果有密码且有内容，加密后再保存到服务器
-            if (protectedValue && passwordToUse && initialContent) {
-              try {
-                initialServerContent = await encryptText(initialContent, passwordToUse);
-                console.log("初始内容已加密，准备保存到服务器");
-              } catch (encryptError) {
-                console.error("加密初始内容失败:", encryptError);
-                // 使用简单加密备用方案
-                initialServerContent = 'SIMPLE:' + btoa(initialContent);
-              }
-            }
             
             const serverSaveSuccess = await saveClipboardToServer(
               id.toString(),
-              initialServerContent, // 使用可能有的初始内容
+              "", // 空内容
               newClipboard.isProtected, 
               expirationHours
             );

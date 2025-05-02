@@ -208,6 +208,23 @@ export async function GET(request: Request) {
         delete clipboards[id];
         saveAllClipboards(clipboards);
         
+        // 同时删除对应的密码数据
+        try {
+          if (fs.existsSync(PASSWORDS_FILE)) {
+            const passwordsData = fs.readFileSync(PASSWORDS_FILE, 'utf8');
+            if (passwordsData.trim()) {
+              const passwords = JSON.parse(passwordsData);
+              if (passwords[id]) {
+                delete passwords[id];
+                fs.writeFileSync(PASSWORDS_FILE, JSON.stringify(passwords, null, 2), 'utf8');
+                console.log(`已删除过期剪贴板(${id})的密码数据`);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('删除密码数据时出错:', error);
+        }
+        
         // 返回过期状态而不是不存在，这样前端可以区分这两种情况
         return NextResponse.json({ exists: false, expired: true }, { status: 200 });
       }
@@ -246,6 +263,38 @@ export async function POST(request: Request) {
       console.log('【服务器API错误】POST请求未提供ID参数');
       return NextResponse.json({ error: '未提供ID参数' }, { status: 400 });
     }
+
+    // 获取已有剪贴板数据
+    const clipboards = getAllClipboards();
+    
+    // 检查是否已存在
+    const existingClipboard = clipboards[id];
+    
+    // 检查现有剪贴板是否过期，如果过期，删除它
+    if (existingClipboard && existingClipboard.expiresAt) {
+      const now = getChinaTimeMs();
+      if (existingClipboard.expiresAt < now) {
+        console.log(`【服务器API】ID=${id}的剪贴板已过期，将被删除并重新创建`);
+        delete clipboards[id];
+        
+        // 同时删除对应的密码数据
+        try {
+          if (fs.existsSync(PASSWORDS_FILE)) {
+            const passwordsData = fs.readFileSync(PASSWORDS_FILE, 'utf8');
+            if (passwordsData.trim()) {
+              const passwords = JSON.parse(passwordsData);
+              if (passwords[id]) {
+                delete passwords[id];
+                fs.writeFileSync(PASSWORDS_FILE, JSON.stringify(passwords, null, 2), 'utf8');
+                console.log(`已删除过期剪贴板(${id})的密码数据`);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('删除密码数据时出错:', error);
+        }
+      }
+    }
     
     // 统一使用分钟为单位计算时间
     // 解析过期时间（支持带单位的格式）
@@ -274,19 +323,6 @@ export async function POST(request: Request) {
     console.log(`【服务器API】当前中国时间: ${formatChinaTime(now)} (${now})`);
     console.log(`【服务器API】过期时间: ${formatChinaTime(expiresAt)} (${expiresAt})`);
     console.log(`【服务器API】过期时长: ${expirationMinutes}分钟 (${millisecondsToExpire}毫秒)`);
-    
-    // 获取已有剪贴板数据
-    const clipboards = getAllClipboards();
-    
-    // 检查是否已存在
-    const existingClipboard = clipboards[id];
-    
-    console.log(`【服务器API】【详细日志】详细信息:`);
-    console.log(`【服务器API】【详细日志】- 是否已存在的剪贴板: ${existingClipboard ? '是' : '否'}`);
-    console.log(`【服务器API】【详细日志】- 当前时间: ${new Date(now).toLocaleString()}`);
-    console.log(`【服务器API】【详细日志】- 过期时间: ${new Date(expiresAt).toLocaleString()}`);
-    console.log(`【服务器API】【详细日志】- 过期时长: ${expirationMinutes}分钟 (${expirationMinutes/60}小时)`);
-    console.log(`【服务器API】【详细日志】- 毫秒差: ${millisecondsToExpire}`);
     
     // 创建或更新剪贴板数据
     const clipboard: Clipboard = {

@@ -49,13 +49,67 @@ function cleanupLocalExpiredClipboards(additionalHours: number = 0): { deleted: 
   console.log(`[清理API] 开始清理过期超过${additionalHours}小时的剪贴板...`);
   
   // 存储目录
-  const clipboardsDir = path.join(process.cwd(), 'data', 'clipboards');
-  const passwordsDir = path.join(process.cwd(), 'data', 'passwords');
+  const dataDir = path.join(process.cwd(), 'data');
+  const clipboardsDir = path.join(dataDir, 'clipboards');
+  const passwordsDir = path.join(dataDir, 'passwords');
   
   // 如果目录不存在，无需清理
   if (!fs.existsSync(clipboardsDir)) {
     console.log(`[清理API] 目录不存在，无需清理: ${clipboardsDir}`);
     return { deleted: 0, ids: [] };
+  }
+  
+  // 清理 clipboards.json 和 passwords.json 中的过期数据
+  let cleanedFromJsonFiles = 0;
+  try {
+    const clipboardsJsonPath = path.join(dataDir, 'clipboards.json');
+    const passwordsJsonPath = path.join(dataDir, 'passwords.json');
+    
+    if (fs.existsSync(clipboardsJsonPath)) {
+      const clipboardsJsonContent = fs.readFileSync(clipboardsJsonPath, 'utf-8');
+      const clipboards = JSON.parse(clipboardsJsonContent);
+      const now = getChinaTimeMs();
+      const idsToDelete: string[] = [];
+      
+      // 找出所有过期的ID
+      for (const [id, clipboard] of Object.entries(clipboards)) {
+        // @ts-ignore
+        if (clipboard.expiresAt < now) {
+          idsToDelete.push(id);
+        }
+      }
+      
+      // 删除过期的剪贴板
+      idsToDelete.forEach(id => {
+        delete clipboards[id];
+        cleanedFromJsonFiles++;
+        console.log(`[清理API] 从clipboards.json删除过期剪贴板: ID=${id}`);
+      });
+      
+      // 保存更新后的数据
+      fs.writeFileSync(clipboardsJsonPath, JSON.stringify(clipboards, null, 2), 'utf-8');
+      
+      // 同时清理密码
+      if (fs.existsSync(passwordsJsonPath)) {
+        const passwordsJsonContent = fs.readFileSync(passwordsJsonPath, 'utf-8');
+        const passwords = JSON.parse(passwordsJsonContent);
+        
+        let passwordsUpdated = false;
+        idsToDelete.forEach(id => {
+          if (passwords[id]) {
+            delete passwords[id];
+            passwordsUpdated = true;
+            console.log(`[清理API] 从passwords.json删除密码: ID=${id}`);
+          }
+        });
+        
+        if (passwordsUpdated) {
+          fs.writeFileSync(passwordsJsonPath, JSON.stringify(passwords, null, 2), 'utf-8');
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[清理API] 清理JSON文件时出错:', error);
   }
   
   // 列出所有JSON文件
@@ -110,10 +164,11 @@ function cleanupLocalExpiredClipboards(additionalHours: number = 0): { deleted: 
     }
   }
   
-  console.log(`[清理API] 清理完成，删除了${deletedFiles.length}个过期剪贴板`);
+  const totalDeleted = deletedFiles.length + cleanedFromJsonFiles;
+  console.log(`[清理API] 清理完成，删除了${totalDeleted}个过期剪贴板 (文件: ${deletedFiles.length}, JSON对象: ${cleanedFromJsonFiles})`);
   
   return {
-    deleted: deletedFiles.length,
+    deleted: totalDeleted,
     ids: deletedFiles
   };
 } 

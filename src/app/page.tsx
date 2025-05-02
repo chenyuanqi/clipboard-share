@@ -260,22 +260,159 @@ export default function Home() {
             </div>
 
             <div className="transition-all duration-200 hover:translate-x-1">
-              <label htmlFor="expiration" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                 有效期
               </label>
-              <select
-                id="expiration"
-                value={expiration}
-                onChange={(e) => setExpiration(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white transition-colors"
-              >
-                <option value="5m">5分钟</option>
-                <option value="30m">30分钟</option>
-                <option value="1">1小时</option>
-                <option value="12">12小时</option>
-                <option value="24">24小时</option>
-                <option value="48">48小时</option>
-              </select>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <label 
+                  className={`relative flex items-center justify-center p-3 rounded-lg border ${
+                    expiration === "5m" 
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/50 shadow-md" 
+                      : "border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-md"
+                  } cursor-pointer transition-all duration-200 text-sm text-center`}
+                >
+                  <input
+                    type="radio"
+                    name="expiration"
+                    value="5m"
+                    checked={expiration === "5m"}
+                    onChange={(e) => setExpiration(e.target.value)}
+                    className="sr-only"
+                  />
+                  <span className="font-medium">5分钟</span>
+                  {expiration === "5m" && (
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                    </span>
+                  )}
+                </label>
+                
+                <label 
+                  className={`relative flex items-center justify-center p-3 rounded-lg border ${
+                    expiration === "30m" 
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/50 shadow-md" 
+                      : "border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-md"
+                  } cursor-pointer transition-all duration-200 text-sm text-center`}
+                >
+                  <input
+                    type="radio"
+                    name="expiration"
+                    value="30m"
+                    checked={expiration === "30m"}
+                    onChange={(e) => setExpiration(e.target.value)}
+                    className="sr-only"
+                  />
+                  <span className="font-medium">30分钟</span>
+                  {expiration === "30m" && (
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                    </span>
+                  )}
+                </label>
+                
+                <label 
+                  className={`relative flex items-center justify-center p-3 rounded-lg border ${
+                    expiration === "1" 
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/50 shadow-md" 
+                      : "border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-md"
+                  } cursor-pointer transition-all duration-200 text-sm text-center`}
+                >
+                  <input
+                    type="radio"
+                    name="expiration"
+                    value="1"
+                    checked={expiration === "1"}
+                    onChange={(e) => setExpiration(e.target.value)}
+                    className="sr-only"
+                  />
+                  <span className="font-medium">1小时</span>
+                  {expiration === "1" && (
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                    </span>
+                  )}
+                </label>
+                
+                <label 
+                  className={`relative flex items-center justify-center p-3 rounded-lg border ${
+                    expiration === "12" 
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/50 shadow-md" 
+                      : "border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-md"
+                  } cursor-pointer transition-all duration-200 text-sm text-center`}
+                >
+                  <input
+                    type="radio"
+                    name="expiration"
+                    value="12"
+                    checked={expiration === "12"}
+                    onChange={(e) => setExpiration(e.target.value)}
+                    className="sr-only"
+                  />
+                  <span className="font-medium">12小时</span>
+                  {expiration === "12" && (
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                    </span>
+                  )}
+                </label>
+                
+                <label 
+                  className={`relative flex items-center justify-center p-3 rounded-lg border ${
+                    expiration === "24" 
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/50 shadow-md" 
+                      : "border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-md"
+                  } cursor-pointer transition-all duration-200 text-sm text-center`}
+                >
+                  <input
+                    type="radio"
+                    name="expiration"
+                    value="24"
+                    checked={expiration === "24"}
+                    onChange={(e) => setExpiration(e.target.value)}
+                    className="sr-only"
+                  />
+                  <span className="font-medium">24小时</span>
+                  {expiration === "24" && (
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                    </span>
+                  )}
+                </label>
+                
+                <label 
+                  className={`relative flex items-center justify-center p-3 rounded-lg border ${
+                    expiration === "48" 
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/50 shadow-md" 
+                      : "border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-md"
+                  } cursor-pointer transition-all duration-200 text-sm text-center`}
+                >
+                  <input
+                    type="radio"
+                    name="expiration"
+                    value="48"
+                    checked={expiration === "48"}
+                    onChange={(e) => setExpiration(e.target.value)}
+                    className="sr-only"
+                  />
+                  <span className="font-medium">48小时</span>
+                  {expiration === "48" && (
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                    </span>
+                  )}
+                </label>
+              </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {expiration === "5m" || expiration === "30m" 
+                  ? `剪贴板将在${expiration === "5m" ? "5分钟" : "30分钟"}后自动过期并删除` 
+                  : `剪贴板将在${expiration}小时后自动过期并删除`}
+              </p>
             </div>
 
             <button
